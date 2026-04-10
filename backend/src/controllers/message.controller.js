@@ -105,6 +105,7 @@ const sendMessage = async (req, res, next) => {
     const msg = result.rows[0];
     const io = getIO();
     if (io) {
+      // Emit to recipient's personal room (works whether or not they have the chat open)
       const others = await db.query(
         'SELECT user_id FROM conversation_participants WHERE conversation_id = $1 AND user_id != $2',
         [conversationId, req.user.id]
@@ -112,6 +113,8 @@ const sendMessage = async (req, res, next) => {
       others.rows.forEach(({ user_id }) =>
         io.to(`user:${user_id}`).emit('new_message', msg)
       );
+      // Also emit to the conv room so the sender's socket sees it (dedup handled on frontend)
+      io.to(`conv:${conversationId}`).emit('new_message', msg);
     }
 
     res.status(201).json(msg);

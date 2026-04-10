@@ -38,7 +38,9 @@ export default function MessagesPage() {
     if (!conversationId) return;
     joinConversation(conversationId);
     const s = getSocket();
-    const handler = (msg) => setMessages((m) => [...m, msg]);
+    const handler = (msg) => {
+      setMessages((m) => m.some((x) => x.id === msg.id) ? m : [...m, msg]);
+    };
     s?.on('new_message', handler);
     return () => {
       leaveConversation(conversationId);
@@ -53,7 +55,7 @@ export default function MessagesPage() {
   const { mutate: send } = useMutation({
     mutationFn: () => api.post(`/messages/${conversationId}`, { content: text }),
     onSuccess: ({ data }) => {
-      setMessages((m) => [...m, data]);
+      setMessages((m) => m.some((x) => x.id === data.id) ? m : [...m, data]);
       setText('');
       qc.invalidateQueries({ queryKey: ['conversations'] });
     },

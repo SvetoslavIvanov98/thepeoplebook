@@ -1,12 +1,24 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 
 export default function RightPanel() {
+  const qc = useQueryClient();
+  const [followed, setFollowed] = useState({});
+
   const { data: suggested } = useQuery({
     queryKey: ['suggested-users'],
     queryFn: () => api.get('/users/suggested').then((r) => r.data),
     staleTime: 60_000,
+  });
+
+  const { mutate: toggleFollow } = useMutation({
+    mutationFn: (userId) => api.post(`/follows/${userId}/toggle`),
+    onSuccess: (_, userId) => {
+      setFollowed((prev) => ({ ...prev, [userId]: !prev[userId] }));
+      qc.invalidateQueries({ queryKey: ['suggested-users'] });
+    },
   });
 
   return (
@@ -28,6 +40,16 @@ export default function RightPanel() {
               </Link>
               <p className="text-xs text-gray-500">@{u.username}</p>
             </div>
+            <button
+              onClick={() => toggleFollow(u.id)}
+              className={`text-xs font-semibold rounded-full px-3 py-1 transition-colors flex-shrink-0 ${
+                followed[u.id]
+                  ? 'border border-gray-300 dark:border-gray-600 hover:border-red-400 hover:text-red-400'
+                  : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-80'
+              }`}
+            >
+              {followed[u.id] ? 'Following' : 'Follow'}
+            </button>
           </div>
         ))}
       </div>
