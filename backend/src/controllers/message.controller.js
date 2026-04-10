@@ -89,7 +89,7 @@ const sendMessage = async (req, res, next) => {
   try {
     const { conversationId } = req.params;
     const { content } = req.body;
-    const media_url = req.file ? `/uploads/${req.file.filename}` : null;
+    const media_url = req.file?.location ?? null;
 
     const member = await db.query(
       'SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',

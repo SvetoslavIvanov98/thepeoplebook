@@ -2,7 +2,7 @@ const db = require('../config/db');
 
 const createStory = async (req, res, next) => {
   try {
-    const media_url = req.file ? `/uploads/${req.file.filename}` : null;
+    const media_url = req.file?.location ?? null;
     if (!media_url) return res.status(400).json({ error: 'Media required for story' });
 
     const result = await db.query(

@@ -21,8 +21,8 @@ const getProfile = async (req, res, next) => {
 const updateProfile = async (req, res, next) => {
   try {
     const { full_name, bio } = req.body;
-    const avatar_url = req.files?.avatar?.[0] ? `/uploads/${req.files.avatar[0].filename}` : undefined;
-    const cover_url = req.files?.cover?.[0] ? `/uploads/${req.files.cover[0].filename}` : undefined;
+    const avatar_url = req.files?.avatar?.[0]?.location;
+    const cover_url = req.files?.cover?.[0]?.location;
 
     const fields = [];
     const values = [];

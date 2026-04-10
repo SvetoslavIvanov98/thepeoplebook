@@ -4,7 +4,6 @@ const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const passport = require('passport');
-const path = require('path');
 
 require('./config/passport');
 
@@ -55,9 +54,6 @@ app.use(cookieParser());
 
 // Passport
 app.use(passport.initialize());
-
-// Static uploads
-app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // Routes
 app.use('/api/auth', authRoutes);

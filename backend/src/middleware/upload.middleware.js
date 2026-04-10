@@ -1,14 +1,14 @@
 const multer = require('multer');
+const multerS3 = require('multer-s3');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const fs = require('fs');
+const s3 = require('../config/s3');
 
-const uploadDir = path.join(__dirname, '..', '..', process.env.UPLOAD_DIR || 'uploads');
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
+const storage = multerS3({
+  s3,
+  bucket: process.env.LINODE_S3_BUCKET,
+  contentType: (_req, file, cb) => cb(null, file.mimetype),
+  key: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${uuidv4()}${ext}`);
   },

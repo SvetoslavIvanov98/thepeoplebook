@@ -33,7 +33,7 @@ const getFeed = async (req, res, next) => {
 const createPost = async (req, res, next) => {
   try {
     const { content, hashtags } = req.body;
-    const media_urls = req.files ? req.files.map(f => `/uploads/${f.filename}`) : [];
+    const media_urls = req.files ? req.files.map(f => f.location) : [];
 
     const hashtagArr = hashtags
       ? JSON.parse(hashtags)
