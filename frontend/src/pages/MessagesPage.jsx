@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/auth.store';
 import { useEffect, useRef, useState } from 'react';
 import { getSocket, joinConversation, leaveConversation } from '../services/socket.service';
 import { formatDistanceToNow } from 'date-fns';
+import toast from 'react-hot-toast';
 
 export default function MessagesPage() {
   const { conversationId } = useParams();
@@ -12,6 +13,8 @@ export default function MessagesPage() {
   const navigate = useNavigate();
   const [text, setText] = useState('');
   const [messages, setMessages] = useState([]);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeUsername, setComposeUsername] = useState('');
   const bottomRef = useRef();
   const qc = useQueryClient();
 
@@ -54,6 +57,7 @@ export default function MessagesPage() {
       setText('');
       qc.invalidateQueries({ queryKey: ['conversations'] });
     },
+    onError: (err) => toast.error(err.response?.data?.error || 'Failed to send message'),
   });
 
   return (
@@ -61,7 +65,16 @@ export default function MessagesPage() {
       {/* Conversations list */}
       <div className={`w-full md:w-72 border-r border-gray-200 dark:border-gray-800 flex flex-col ${conversationId ? 'hidden md:flex' : 'flex'}`}>
         <header className="sticky top-0 bg-white/80 dark:bg-gray-950/80 backdrop-blur border-b border-gray-200 dark:border-gray-800 px-4 py-3">
-          <h1 className="font-bold text-lg">Messages</h1>
+          <div className="flex items-center justify-between">
+            <h1 className="font-bold text-lg">Messages</h1>
+            <button
+              onClick={() => setComposeOpen(true)}
+              className="text-brand-600 hover:text-brand-700 text-sm font-semibold"
+              title="New message"
+            >
+              ✏️ New
+            </button>
+          </div>
         </header>
         <div className="overflow-y-auto flex-1">
           {(conversations || []).map((c) => (
@@ -127,6 +140,53 @@ export default function MessagesPage() {
       ) : (
         <div className="flex-1 hidden md:flex items-center justify-center text-gray-400">
           Select a conversation to start chatting
+        </div>
+      )}
+
+      {/* Compose / new conversation modal */}
+      {composeOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-sm space-y-4">
+            <h3 className="font-bold text-lg">New Message</h3>
+            <input
+              autoFocus
+              value={composeUsername}
+              onChange={(e) => setComposeUsername(e.target.value)}
+              placeholder="Enter username…"
+              className="w-full border border-gray-300 dark:border-gray-700 rounded-xl px-4 py-2 text-sm bg-transparent outline-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && composeUsername.trim()) e.target.closest('div.space-y-4').querySelector('button[data-go]')?.click();
+                if (e.key === 'Escape') setComposeOpen(false);
+              }}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setComposeOpen(false); setComposeUsername(''); }}
+                className="border border-gray-300 dark:border-gray-700 rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                data-go
+                onClick={async () => {
+                  const uname = composeUsername.trim();
+                  if (!uname) return;
+                  try {
+                    const { data: profile } = await api.get(`/users/${uname}`);
+                    const { data: conv } = await api.post(`/messages/with/${profile.id}`);
+                    setComposeOpen(false);
+                    setComposeUsername('');
+                    navigate(`/messages/${conv.id}`);
+                  } catch (err) {
+                    toast.error(err.response?.data?.error || 'User not found');
+                  }
+                }}
+                className="bg-brand-600 text-white rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-brand-700"
+              >
+                Open Chat
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

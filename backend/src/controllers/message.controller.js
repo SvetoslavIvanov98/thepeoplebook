@@ -75,7 +75,7 @@ const getMessages = async (req, res, next) => {
 
     // Mark as read
     await db.query(
-      'UPDATE messages SET read = TRUE WHERE conversation_id = $1 AND sender_id != $2',
+      'UPDATE messages SET read = TRUE WHERE conversation_id = $1 AND sender_id != $2 AND read = FALSE',
       [conversationId, req.user.id]
     );
 
@@ -104,7 +104,15 @@ const sendMessage = async (req, res, next) => {
 
     const msg = result.rows[0];
     const io = getIO();
-    if (io) io.to(`conv:${conversationId}`).emit('new_message', msg);
+    if (io) {
+      const others = await db.query(
+        'SELECT user_id FROM conversation_participants WHERE conversation_id = $1 AND user_id != $2',
+        [conversationId, req.user.id]
+      );
+      others.rows.forEach(({ user_id }) =>
+        io.to(`user:${user_id}`).emit('new_message', msg)
+      );
+    }
 
     res.status(201).json(msg);
   } catch (err) {

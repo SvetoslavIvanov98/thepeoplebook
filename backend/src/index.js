@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 4000;
 const applyMigrations = async () => {
   // Idempotent migrations safe to run on every start
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE`);
   console.log('Migrations applied');
 };
 

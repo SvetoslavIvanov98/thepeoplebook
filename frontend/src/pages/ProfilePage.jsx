@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
 import PostCard from '../components/post/PostCard';
@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 
 export default function ProfilePage() {
   const { username } = useParams();
+  const navigate = useNavigate();
   const { user: me, logout, setUser } = useAuthStore();
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
@@ -16,6 +17,7 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
+  const [followModal, setFollowModal] = useState(null); // 'followers' | 'following' | null
   const avatarInputRef = useRef(null);
   const coverInputRef = useRef(null);
   const [lightboxUrl, setLightboxUrl] = useState(null);
@@ -85,6 +87,12 @@ export default function ProfilePage() {
       toast.error('Failed to export data');
     }
   };
+
+  const { data: followList, isFetching: followFetching } = useQuery({
+    queryKey: ['follow-list', profile?.id, followModal],
+    queryFn: () => api.get(`/follows/${profile.id}/${followModal}`).then((r) => r.data),
+    enabled: !!profile && !!followModal,
+  });
 
   if (isPending) return <div className="p-8 text-center text-gray-400">Loading…</div>;
   if (isError) return <div className="p-8 text-center text-red-400">Could not load profile. The server may be unavailable.</div>;
@@ -160,16 +168,31 @@ export default function ProfilePage() {
               Edit profile
             </button>
           ) : (
-            <button
-              onClick={() => toggleFollow()}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
-                profile.is_following
-                  ? 'border border-gray-300 dark:border-gray-700 hover:border-red-400 hover:text-red-400'
-                  : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-80'
-              }`}
-            >
-              {profile.is_following ? 'Following' : 'Follow'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => toggleFollow()}
+                className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+                  profile.is_following
+                    ? 'border border-gray-300 dark:border-gray-700 hover:border-red-400 hover:text-red-400'
+                    : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-80'
+                }`}
+              >
+                {profile.is_following ? 'Following' : 'Follow'}
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const { data } = await api.post(`/messages/with/${profile.id}`);
+                    navigate(`/messages/${data.id}`);
+                  } catch {
+                    toast.error('Could not open conversation');
+                  }
+                }}
+                className="border border-gray-300 dark:border-gray-700 rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Message
+              </button>
+            </div>
           )}
         </div>
 
@@ -180,8 +203,18 @@ export default function ProfilePage() {
         <p className="text-gray-500 text-sm">@{profile.username}</p>
         {profile.bio && <p className="mt-2 text-sm">{profile.bio}</p>}
         <div className="flex gap-4 mt-3 text-sm">
-          <span><strong>{profile.following_count}</strong> <span className="text-gray-500">Following</span></span>
-          <span><strong>{profile.followers_count}</strong> <span className="text-gray-500">Followers</span></span>
+          <button
+            onClick={() => setFollowModal('following')}
+            className="hover:underline text-left"
+          >
+            <strong>{profile.following_count}</strong> <span className="text-gray-500">Following</span>
+          </button>
+          <button
+            onClick={() => setFollowModal('followers')}
+            className="hover:underline text-left"
+          >
+            <strong>{profile.followers_count}</strong> <span className="text-gray-500">Followers</span>
+          </button>
         </div>
       </div>
 
@@ -189,6 +222,46 @@ export default function ProfilePage() {
       <div className="border-t border-gray-200 dark:border-gray-800">
         {(posts || []).map((p) => <PostCard key={p.id} post={p} />)}
       </div>
+
+      {/* Followers / Following modal */}
+      {followModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setFollowModal(null)}>
+          <div className="bg-white dark:bg-gray-900 rounded-2xl w-full max-w-sm max-h-[70vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-800">
+              <h3 className="font-bold text-base capitalize">{followModal}</h3>
+              <button onClick={() => setFollowModal(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1 divide-y divide-gray-100 dark:divide-gray-800">
+              {followFetching && (
+                <p className="text-center text-gray-400 py-6 text-sm">Loading…</p>
+              )}
+              {!followFetching && (!followList || followList.length === 0) && (
+                <p className="text-center text-gray-400 py-6 text-sm">No {followModal} yet</p>
+              )}
+              {(followList || []).map((u) => (
+                <div
+                  key={u.id}
+                  className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+                  onClick={() => { setFollowModal(null); navigate(`/${u.username}`); }}
+                >
+                  <img
+                    src={u.avatar_url || `https://ui-avatars.com/api/?name=${u.username}`}
+                    alt={u.username}
+                    className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-sm truncate">
+                      {u.full_name || u.username}
+                      {u.is_verified && <span className="ml-1 text-brand-500">✓</span>}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">@{u.username}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit modal */}
       {editOpen && (

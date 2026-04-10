@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const passport = require('passport');
+const path = require('path');
 
 require('./config/passport');
 
@@ -69,6 +70,12 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/stats', statsRoutes);
+
+// Serve local uploads directory (dev only — S3 is used in production)
+if (!process.env.LINODE_S3_BUCKET) {
+  const uploadDir = path.resolve(process.env.UPLOAD_DIR || 'uploads');
+  app.use('/uploads', express.static(uploadDir));
+}
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
