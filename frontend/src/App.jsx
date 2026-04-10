@@ -1,0 +1,68 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useAuthStore } from './store/auth.store';
+import { useEffect } from 'react';
+import { initSocket } from './services/socket.service';
+
+import MainLayout from './components/layout/MainLayout';
+import AuthLayout from './components/layout/AuthLayout';
+
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import AuthCallbackPage from './pages/AuthCallbackPage';
+import LandingPage from './pages/LandingPage';
+import FeedPage from './pages/FeedPage';
+import ProfilePage from './pages/ProfilePage';
+import PostPage from './pages/PostPage';
+import MessagesPage from './pages/MessagesPage';
+import NotificationsPage from './pages/NotificationsPage';
+import StoriesPage from './pages/StoriesPage';
+import GroupPage from './pages/GroupPage';
+import SearchPage from './pages/SearchPage';
+
+const PrivateRoute = ({ children }) => {
+  const token = useAuthStore((s) => s.token);
+  return token ? children : <Navigate to="/login" replace />;
+};
+
+const GuestRoute = ({ children }) => {
+  const token = useAuthStore((s) => s.token);
+  return !token ? children : <Navigate to="/" replace />;
+};
+
+export default function App() {
+  const { token, fetchMe } = useAuthStore();
+
+  useEffect(() => {
+    if (token) {
+      fetchMe();
+      initSocket(token);
+    }
+  }, [token]);
+
+  return (
+    <Routes>
+      {/* Public landing page */}
+      <Route path="/" element={token ? <Navigate to="/feed" replace /> : <LandingPage />} />
+
+      {/* Guest routes */}
+      <Route element={<AuthLayout />}>
+        <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+        <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      </Route>
+
+      {/* Private routes */}
+      <Route element={<PrivateRoute><MainLayout /></PrivateRoute>}>
+        <Route path="/feed" element={<FeedPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/messages" element={<MessagesPage />} />
+        <Route path="/messages/:conversationId" element={<MessagesPage />} />
+        <Route path="/stories" element={<StoriesPage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="/groups/:id" element={<GroupPage />} />
+        <Route path="/post/:id" element={<PostPage />} />
+        <Route path="/:username" element={<ProfilePage />} />
+      </Route>
+    </Routes>
+  );
+}
