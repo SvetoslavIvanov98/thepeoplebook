@@ -29,18 +29,29 @@ const storeRefreshToken = async (userId, token) => {
   );
 };
 
+const MIN_AGE_YEARS = 16;
+
 const register = async (req, res, next) => {
   try {
-    const { username, email, password, full_name } = req.body;
+    const { username, email, password, full_name, date_of_birth } = req.body;
+
+    if (date_of_birth) {
+      const dob = new Date(date_of_birth);
+      const cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - MIN_AGE_YEARS);
+      if (isNaN(dob.getTime()) || dob > cutoff) {
+        return res.status(400).json({ error: `You must be at least ${MIN_AGE_YEARS} years old to register (GDPR Art. 8).` });
+      }
+    }
 
     const exists = await db.query('SELECT id FROM users WHERE email = $1 OR username = $2', [email, username]);
     if (exists.rows.length) return res.status(409).json({ error: 'Email or username already taken' });
 
     const hash = await bcrypt.hash(password, 12);
     const result = await db.query(
-      `INSERT INTO users (username, email, password_hash, full_name)
-       VALUES ($1, $2, $3, $4) RETURNING id, username, email, full_name, avatar_url, created_at`,
-      [username, email, hash, full_name || null]
+      `INSERT INTO users (username, email, password_hash, full_name, date_of_birth)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, full_name, avatar_url, created_at`,
+      [username, email, hash, full_name || null, date_of_birth || null]
     );
     const user = result.rows[0];
     const refresh_token = signRefresh(user.id);

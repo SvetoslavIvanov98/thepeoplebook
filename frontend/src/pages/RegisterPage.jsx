@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 export default function RegisterPage() {
   const [form, setForm] = useState({ username: '', email: '', password: '', full_name: '' });
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
+  const [agreedToAge, setAgreedToAge] = useState(false);
   const { login } = useAuthStore();
   const navigate = useNavigate();
 
@@ -50,7 +51,17 @@ export default function RegisterPage() {
           . I understand how my data is collected and used.
         </span>
       </label>
-      <button type="submit" disabled={isPending || !agreedToPrivacy}
+      <label className="flex items-start gap-3 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+        <input
+          type="checkbox"
+          required
+          checked={agreedToAge}
+          onChange={(e) => setAgreedToAge(e.target.checked)}
+          className="mt-0.5 w-4 h-4 accent-brand-600 shrink-0"
+        />
+        <span>I confirm that I am at least <strong>16 years old</strong>. Users under 16 require parental consent under EU law (GDPR Art. 8).</span>
+      </label>
+      <button type="submit" disabled={isPending || !agreedToPrivacy || !agreedToAge}
         className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl">
         {isPending ? 'Creating account…' : 'Register'}
       </button>
