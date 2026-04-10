@@ -6,8 +6,9 @@ import PostCard from '../components/post/PostCard';
 import MediaLightbox from '../components/MediaLightbox';
 import { useState, useRef } from 'react';
 import toast from 'react-hot-toast';
+import SEO from '../components/SEO';
 
-export default function ProfilePage() {
+export default function ProfilePage({ user }) {
   const { username } = useParams();
   const navigate = useNavigate();
   const { user: me, logout, setUser } = useAuthStore();

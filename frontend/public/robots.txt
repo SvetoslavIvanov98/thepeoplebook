@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /messages/
+Disallow: /settings/
+Disallow: /*?api=
+
+# Sitemap location
+Sitemap: https://thepeoplebook.net/sitemap.xml

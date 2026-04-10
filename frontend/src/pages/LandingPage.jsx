@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import SEO from '../components/SEO';
 
 const GITHUB_URL = 'https://github.com/SvetoslavIvanov98/thepeoplebook';
 
@@ -52,6 +53,10 @@ const features = [
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+      <SEO 
+        title="Welcome" 
+        description="The web you remember is still out there. Free to join. No credit card. No ads. No data harvesting." 
+      />
 
       {/* Nav */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800 sticky top-0 bg-white/80 dark:bg-gray-950/80 backdrop-blur z-10">
