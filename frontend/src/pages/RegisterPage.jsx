@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 
 export default function RegisterPage() {
   const [form, setForm] = useState({ username: '', email: '', password: '', full_name: '' });
+  const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
   const { login } = useAuthStore();
   const navigate = useNavigate();
 
@@ -33,7 +34,23 @@ export default function RegisterPage() {
         className="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-800 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500" />
       <input type="password" placeholder="Password (min 8 chars)" required minLength={8} value={form.password} onChange={set('password')}
         className="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-800 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500" />
-      <button type="submit" disabled={isPending}
+      <label className="flex items-start gap-3 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+        <input
+          type="checkbox"
+          required
+          checked={agreedToPrivacy}
+          onChange={(e) => setAgreedToPrivacy(e.target.checked)}
+          className="mt-0.5 w-4 h-4 accent-brand-600 shrink-0"
+        />
+        <span>
+          I have read and agree to the{' '}
+          <Link to="/privacy" className="text-brand-600 hover:underline font-medium" target="_blank">
+            Privacy Policy
+          </Link>
+          . I understand how my data is collected and used.
+        </span>
+      </label>
+      <button type="submit" disabled={isPending || !agreedToPrivacy}
         className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl">
         {isPending ? 'Creating account…' : 'Register'}
       </button>

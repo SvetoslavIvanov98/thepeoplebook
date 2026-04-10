@@ -17,11 +17,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
+
 
   backend:
     build:
@@ -38,11 +34,7 @@ services:
       - '127.0.0.1:4000:4000'
     volumes:
       - uploads:/app/uploads
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
+
 
   frontend:
     build:
@@ -53,11 +45,7 @@ services:
       - '5173:80'
     depends_on:
       - backend
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 128M
+
 
 volumes:
   db_data:

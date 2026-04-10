@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/auth.store';
 import { useEffect } from 'react';
 import { initSocket } from './services/socket.service';
+import CookieBanner from './components/CookieBanner';
 
 import MainLayout from './components/layout/MainLayout';
 import AuthLayout from './components/layout/AuthLayout';
@@ -10,6 +11,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import LandingPage from './pages/LandingPage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
 import FeedPage from './pages/FeedPage';
 import ProfilePage from './pages/ProfilePage';
 import PostPage from './pages/PostPage';
@@ -40,29 +42,33 @@ export default function App() {
   }, [token]);
 
   return (
-    <Routes>
-      {/* Public landing page */}
-      <Route path="/" element={token ? <Navigate to="/feed" replace /> : <LandingPage />} />
+    <>
+      <CookieBanner />
+      <Routes>
+        {/* Public pages */}
+        <Route path="/" element={token ? <Navigate to="/feed" replace /> : <LandingPage />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
 
-      {/* Guest routes */}
-      <Route element={<AuthLayout />}>
-        <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
-        <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
-        <Route path="/auth/callback" element={<AuthCallbackPage />} />
-      </Route>
+        {/* Guest routes */}
+        <Route element={<AuthLayout />}>
+          <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+          <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        </Route>
 
-      {/* Private routes */}
-      <Route element={<PrivateRoute><MainLayout /></PrivateRoute>}>
-        <Route path="/feed" element={<FeedPage />} />
-        <Route path="/notifications" element={<NotificationsPage />} />
-        <Route path="/messages" element={<MessagesPage />} />
-        <Route path="/messages/:conversationId" element={<MessagesPage />} />
-        <Route path="/stories" element={<StoriesPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/groups/:id" element={<GroupPage />} />
-        <Route path="/post/:id" element={<PostPage />} />
-        <Route path="/:username" element={<ProfilePage />} />
-      </Route>
-    </Routes>
+        {/* Private routes */}
+        <Route element={<PrivateRoute><MainLayout /></PrivateRoute>}>
+          <Route path="/feed" element={<FeedPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/messages" element={<MessagesPage />} />
+          <Route path="/messages/:conversationId" element={<MessagesPage />} />
+          <Route path="/stories" element={<StoriesPage />} />
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/groups/:id" element={<GroupPage />} />
+          <Route path="/post/:id" element={<PostPage />} />
+          <Route path="/:username" element={<ProfilePage />} />
+        </Route>
+      </Routes>
+    </>
   );
 }

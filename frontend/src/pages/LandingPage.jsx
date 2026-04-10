@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 
-const GITHUB_URL = 'https://github.com/your-username/your-repo'; // ← update this
+const GITHUB_URL = 'https://github.com/SvetoslavIvanov98/thepeoplebook'; // ← update this
 
 const GitHubIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
@@ -150,6 +150,11 @@ export default function LandingPage() {
           <GitHubIcon />
           View source on GitHub
         </a>
+        <div className="flex gap-4 justify-center">
+          <Link to="/privacy" className="hover:text-brand-600 transition-colors">Privacy Policy</Link>
+          <span>·</span>
+          <Link to="/register" className="hover:text-brand-600 transition-colors">Join free</Link>
+        </div>
         <span>© {new Date().getFullYear()} The People Book · Privacy-first social networking</span>
       </footer>
     </div>

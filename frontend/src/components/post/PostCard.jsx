@@ -1,13 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
+import { useState } from 'react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
+import MediaLightbox from '../MediaLightbox';
 import toast from 'react-hot-toast';
 
 export default function PostCard({ post, onDelete }) {
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
 
   const { mutate: toggleLike } = useMutation({
     mutationFn: () => api.post(`/likes/post/${post.id}`),
@@ -71,11 +74,33 @@ export default function PostCard({ post, onDelete }) {
             <div className={`mt-2 grid gap-1 ${media.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
               {media.map((url, i) => (
                 url.match(/\.(mp4|mov|avi)/i)
-                  ? <video key={i} src={url} controls className="rounded-xl w-full object-cover max-h-72" />
-                  : <img key={i} src={url} alt="" className="rounded-xl w-full object-cover max-h-72" />
+                  ? (
+                    <div key={i} className="relative cursor-pointer group rounded-xl overflow-hidden" onClick={() => setLightboxIndex(i)}>
+                      <video src={url} className="w-full object-cover max-h-72 pointer-events-none" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
+                        <span className="text-white text-5xl leading-none">▶</span>
+                      </div>
+                    </div>
+                  )
+                  : (
+                    <img
+                      key={i}
+                      src={url}
+                      alt=""
+                      className="rounded-xl w-full object-cover max-h-72 cursor-pointer hover:brightness-90 transition-[filter]"
+                      onClick={() => setLightboxIndex(i)}
+                    />
+                  )
               ))}
             </div>
           )}
+
+          <MediaLightbox
+            items={media}
+            index={lightboxIndex}
+            onClose={() => setLightboxIndex(null)}
+            onNav={setLightboxIndex}
+          />
 
           <div className="flex items-center gap-6 mt-3 text-gray-400 text-sm">
             <button

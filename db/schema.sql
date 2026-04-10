@@ -13,11 +13,15 @@ CREATE TABLE IF NOT EXISTS users (
   full_name      VARCHAR(100),
   bio            TEXT,
   avatar_url     TEXT,
+  cover_url      TEXT,
   google_id      TEXT UNIQUE,
   is_verified    BOOLEAN  NOT NULL DEFAULT FALSE,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Idempotent column additions (safe to run on existing databases)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_users_username ON users USING gin (username gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_users_full_name ON users USING gin (full_name gin_trgm_ops);
