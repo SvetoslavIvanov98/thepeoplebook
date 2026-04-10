@@ -20,6 +20,7 @@ const storyRoutes = require('./routes/story.routes');
 const groupRoutes = require('./routes/group.routes');
 const searchRoutes = require('./routes/search.routes');
 const mediaRoutes = require('./routes/media.routes');
+const statsRoutes = require('./routes/stats.routes');
 
 const app = express();
 
@@ -71,6 +72,7 @@ app.use('/api/stories', storyRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/media', mediaRoutes);
+app.use('/api/stats', statsRoutes);
 
 // Health check
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
