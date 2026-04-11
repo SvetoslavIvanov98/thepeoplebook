@@ -48,8 +48,7 @@ const upload = multer({
   limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 10) * 1024 * 1024 },
 });
 
-// Normalise req.file / req.files location for disk-stored files
-// so controllers always read file.location (same as multer-s3)
+// Normalise req.file / req.files location so controllers always read file.location
 const wrapDiskUpload = (multerMiddleware) => (req, res, next) => {
   multerMiddleware(req, res, (err) => {
     if (err) return next(err);
@@ -65,6 +64,22 @@ const wrapDiskUpload = (multerMiddleware) => (req, res, next) => {
           Object.values(req.files).forEach((arr) =>
             arr.forEach((f) => { f.location = `/uploads/${f.filename}`; })
           );
+        }
+      }
+    } else if (process.env.LINODE_S3_PUBLIC_URL) {
+      // multer-s3 v3 may not construct `location` correctly for custom S3-compatible
+      // endpoints (e.g. Linode Object Storage). Always derive it from the public
+      // base URL + the key, matching the pattern used in media.routes.js.
+      const baseUrl = process.env.LINODE_S3_PUBLIC_URL.replace(/\/$/, '');
+      const normalizeS3 = (f) => {
+        if (f && f.key) f.location = `${baseUrl}/${f.key}`;
+      };
+      if (req.file) normalizeS3(req.file);
+      if (req.files) {
+        if (Array.isArray(req.files)) {
+          req.files.forEach(normalizeS3);
+        } else {
+          Object.values(req.files).forEach((arr) => arr.forEach(normalizeS3));
         }
       }
     }

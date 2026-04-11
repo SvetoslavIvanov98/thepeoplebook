@@ -67,7 +67,10 @@ export default function ProfilePage({ user }) {
     const form = new FormData();
     form.append(field, file);
     try {
-      await api.patch('/users/me', form);
+      const res = await api.patch('/users/me', form);
+      if (field === 'avatar' && res.data?.avatar_url) {
+        setUser({ ...me, avatar_url: res.data.avatar_url });
+      }
       qc.invalidateQueries({ queryKey: ['profile', username] });
       toast.success(field === 'avatar' ? 'Profile photo updated' : 'Cover photo updated');
     } catch {
