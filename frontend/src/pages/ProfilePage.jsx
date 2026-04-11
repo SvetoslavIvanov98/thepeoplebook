@@ -42,6 +42,28 @@ export default function ProfilePage({ user }) {
     },
   });
 
+  const { mutate: toggleBlock } = useMutation({
+    mutationFn: () => api.post(`/users/block/${profile.id}`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['profile', username] });
+      qc.invalidateQueries({ queryKey: ['feed'] });
+      toast.success(res.data.blocked ? 'User blocked' : 'User unblocked');
+    },
+    onError: () => toast.error('Action failed'),
+  });
+
+  const { mutate: toggleMute } = useMutation({
+    mutationFn: () => api.post(`/users/mute/${profile.id}`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['profile', username] });
+      qc.invalidateQueries({ queryKey: ['feed'] });
+      toast.success(res.data.muted ? 'User muted' : 'User unmuted');
+    },
+    onError: () => toast.error('Action failed'),
+  });
+
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+
   const { mutate: saveProfile } = useMutation({
     mutationFn: () => api.patch('/users/me', { bio, full_name: fullName }),
     onSuccess: (res) => {
@@ -175,7 +197,8 @@ export default function ProfilePage({ user }) {
             <div className="flex gap-2">
               <button
                 onClick={() => toggleFollow()}
-                className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+                disabled={profile.has_blocked_me || profile.is_blocked}
+                className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                   profile.is_following
                     ? 'border border-gray-300 dark:border-gray-700 hover:border-red-400 hover:text-red-400'
                     : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-80'
@@ -196,6 +219,34 @@ export default function ProfilePage({ user }) {
               >
                 Message
               </button>
+              {/* More menu: mute / block */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowMoreMenu((v) => !v)}
+                  className="border border-gray-300 dark:border-gray-700 rounded-full w-9 h-9 flex items-center justify-center text-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  ···
+                </button>
+                {showMoreMenu && (
+                  <div
+                    className="absolute right-0 mt-1 w-44 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-20 overflow-hidden"
+                    onMouseLeave={() => setShowMoreMenu(false)}
+                  >
+                    <button
+                      onClick={() => { toggleMute(); setShowMoreMenu(false); }}
+                      className="w-full text-left px-4 py-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      {profile.is_muted ? '🔔 Unmute' : '🔇 Mute'}
+                    </button>
+                    <button
+                      onClick={() => { toggleBlock(); setShowMoreMenu(false); }}
+                      className="w-full text-left px-4 py-3 text-sm text-red-500 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      {profile.is_blocked ? '🚫 Unblock' : '🚫 Block'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

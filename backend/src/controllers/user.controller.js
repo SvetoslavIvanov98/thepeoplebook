@@ -8,7 +8,10 @@ const getProfile = async (req, res, next) => {
       `SELECT u.id, u.username, u.full_name, u.avatar_url, u.cover_url, u.bio, u.is_verified, u.created_at,
               (SELECT COUNT(*) FROM follows WHERE following_id = u.id) AS followers_count,
               (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) AS following_count,
-              ${req.user ? `EXISTS(SELECT 1 FROM follows WHERE follower_id = $2 AND following_id = u.id)` : 'FALSE'} AS is_following
+              ${req.user ? `EXISTS(SELECT 1 FROM follows WHERE follower_id = $2 AND following_id = u.id)` : 'FALSE'} AS is_following,
+              ${req.user ? `EXISTS(SELECT 1 FROM user_blocks WHERE blocker_id = $2 AND blocked_id = u.id)` : 'FALSE'} AS is_blocked,
+              ${req.user ? `EXISTS(SELECT 1 FROM user_blocks WHERE blocker_id = u.id AND blocked_id = $2)` : 'FALSE'} AS has_blocked_me,
+              ${req.user ? `EXISTS(SELECT 1 FROM user_mutes WHERE muter_id = $2 AND muted_id = u.id)` : 'FALSE'} AS is_muted
        FROM users u WHERE u.username = $1`,
       req.user ? [username, req.user.id] : [username]
     );
@@ -67,6 +70,8 @@ const getSuggestedUsers = async (req, res, next) => {
        FROM users u
        WHERE u.id != $1
          AND u.id NOT IN (SELECT following_id FROM follows WHERE follower_id = $1)
+         AND u.id NOT IN (SELECT blocked_id FROM user_blocks WHERE blocker_id = $1)
+         AND u.id NOT IN (SELECT blocker_id FROM user_blocks WHERE blocked_id = $1)
        ORDER BY followers_count DESC
        LIMIT 10`,
       [req.user.id]

@@ -174,6 +174,28 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (conversation_id, created_at DESC);
 
+-- ─── Blocks & Mutes ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_blocks (
+  id          BIGSERIAL PRIMARY KEY,
+  blocker_id  BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id  BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (blocker_id, blocked_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_blocks_blocker ON user_blocks (blocker_id);
+CREATE INDEX IF NOT EXISTS idx_user_blocks_blocked ON user_blocks (blocked_id);
+
+CREATE TABLE IF NOT EXISTS user_mutes (
+  id         BIGSERIAL PRIMARY KEY,
+  muter_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  muted_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (muter_id, muted_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_mutes_muter ON user_mutes (muter_id);
+
 -- ─── Refresh Tokens ───────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   id          BIGSERIAL PRIMARY KEY,

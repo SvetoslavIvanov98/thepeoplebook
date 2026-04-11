@@ -18,6 +18,9 @@ const getFeed = async (req, res, next) => {
        JOIN users u ON u.id = p.user_id
        WHERE p.deleted_at IS NULL
          AND (p.user_id = $1 OR p.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1))
+         AND p.user_id NOT IN (SELECT blocked_id FROM user_blocks WHERE blocker_id = $1)
+         AND p.user_id NOT IN (SELECT blocker_id FROM user_blocks WHERE blocked_id = $1)
+         AND p.user_id NOT IN (SELECT muted_id FROM user_mutes WHERE muter_id = $1)
          ${cursor ? `AND p.created_at < $4` : ''}
        ORDER BY p.created_at DESC
        LIMIT $2`,
