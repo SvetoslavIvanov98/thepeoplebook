@@ -4,6 +4,7 @@ import { useTheme } from '../hooks/useTheme';
 
 const links = [
   { to: '/feed', icon: '🏠' },
+  { to: '/groups', icon: '👥' },
   { to: '/search', icon: '🔍' },
   { to: '/stories', icon: '📸' },
   { to: '/notifications', icon: '🔔' },

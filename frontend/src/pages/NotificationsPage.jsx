@@ -3,6 +3,7 @@ import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
+import toast from 'react-hot-toast';
 
 const TYPE_LABEL = {
   like: '❤️ liked your post',
@@ -11,6 +12,39 @@ const TYPE_LABEL = {
   repost: '🔁 reposted your post',
   message: '✉️ sent you a message',
 };
+
+function GroupInviteActions({ notification, onRespond }) {
+  const { mutate, isPending, isSuccess } = useMutation({
+    mutationFn: (action) =>
+      api.post(`/groups/${notification.group_id}/invite/respond`, { action }),
+    onSuccess: (_, action) => {
+      toast.success(action === 'accept' ? 'Joined group!' : 'Invite declined');
+      onRespond();
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Failed'),
+  });
+
+  if (isSuccess) return null;
+
+  return (
+    <div className="flex gap-2 mt-2">
+      <button
+        onClick={() => mutate('accept')}
+        disabled={isPending}
+        className="text-xs font-bold px-3 py-1.5 rounded-full bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white transition-colors"
+      >
+        Accept
+      </button>
+      <button
+        onClick={() => mutate('decline')}
+        disabled={isPending}
+        className="text-xs font-bold px-3 py-1.5 rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+      >
+        Decline
+      </button>
+    </div>
+  );
+}
 
 export default function NotificationsPage() {
   const qc = useQueryClient();
@@ -54,9 +88,24 @@ export default function NotificationsPage() {
               <Link to={`/${n.actor_username}`} className="font-semibold hover:underline text-gray-900 dark:text-gray-100">
                 {n.actor_name || n.actor_username}
               </Link>{' '}
-              {TYPE_LABEL[n.type] || n.type}
+              {n.type === 'group_invite' ? (
+                <>
+                  invited you to join{' '}
+                  <Link to={`/groups/${n.group_id}`} className="font-semibold hover:underline text-brand-600">
+                    {n.group_name || 'a group'}
+                  </Link>
+                </>
+              ) : (
+                TYPE_LABEL[n.type] || n.type
+              )}
             </p>
             <p className="text-xs text-gray-400">{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</p>
+            {n.type === 'group_invite' && (
+              <GroupInviteActions
+                notification={n}
+                onRespond={() => qc.invalidateQueries({ queryKey: ['notifications'] })}
+              />
+            )}
           </div>
           {n.post_id && (
             <Link to={`/post/${n.post_id}`} className="text-xs text-brand-500 hover:underline">View</Link>

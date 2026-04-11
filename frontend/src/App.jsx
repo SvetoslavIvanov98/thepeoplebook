@@ -19,6 +19,7 @@ import MessagesPage from './pages/MessagesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import StoriesPage from './pages/StoriesPage';
 import GroupPage from './pages/GroupPage';
+import GroupsPage from './pages/GroupsPage';
 import SearchPage from './pages/SearchPage';
 
 const PrivateRoute = ({ children }) => {
@@ -64,6 +65,7 @@ export default function App() {
           <Route path="/messages/:conversationId" element={<MessagesPage />} />
           <Route path="/stories" element={<StoriesPage />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/groups" element={<GroupsPage />} />
           <Route path="/groups/:id" element={<GroupPage />} />
           <Route path="/post/:id" element={<PostPage />} />
           <Route path="/:username" element={<ProfilePage />} />

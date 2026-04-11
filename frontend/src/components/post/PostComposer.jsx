@@ -23,6 +23,7 @@ export default function PostComposer({ groupId = null }) {
       setContent('');
       setFiles([]);
       qc.invalidateQueries({ queryKey: ['feed'] });
+      if (groupId) qc.invalidateQueries({ queryKey: ['group-posts', groupId] });
       toast.success('Posted!');
     },
     onError: () => toast.error('Failed to post'),

@@ -7,6 +7,7 @@ const links = [
   { to: '/feed', label: 'Feed', icon: '🏠' },
   { to: '/notifications', label: 'Notifications', icon: '🔔' },
   { to: '/messages', label: 'Messages', icon: '💬' },
+  { to: '/groups', label: 'Groups', icon: '👥' },
   { to: '/stories', label: 'Stories', icon: '📸' },
   { to: '/search', label: 'Search', icon: '🔍' },
 ];

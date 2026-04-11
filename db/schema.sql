@@ -47,8 +47,12 @@ CREATE TABLE IF NOT EXISTS groups (
   description TEXT,
   cover_url   TEXT,
   owner_id    BIGINT NOT NULL REFERENCES users(id),
+  privacy     VARCHAR(10) NOT NULL DEFAULT 'public',
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Idempotent: add privacy column on existing databases
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS privacy VARCHAR(10) NOT NULL DEFAULT 'public';
 
 CREATE TABLE IF NOT EXISTS group_members (
   id           BIGSERIAL PRIMARY KEY,
@@ -58,6 +62,17 @@ CREATE TABLE IF NOT EXISTS group_members (
   joined_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (group_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS group_join_requests (
+  id          BIGSERIAL PRIMARY KEY,
+  group_id    BIGINT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status      VARCHAR(10) NOT NULL DEFAULT 'pending',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_group_join_requests ON group_join_requests (group_id, status);
 
 -- ─── Posts ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS posts (

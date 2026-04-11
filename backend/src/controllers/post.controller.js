@@ -33,17 +33,17 @@ const getFeed = async (req, res, next) => {
 
 const createPost = async (req, res, next) => {
   try {
-    const { content, hashtags } = req.body;
+    const { content, hashtags, group_id } = req.body;
     const media_urls = req.files ? req.files.map(f => f.location) : [];
 
     const hashtagArr = hashtags
       ? JSON.parse(hashtags)
-      : (content.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase());
+      : (content?.match(/#\w+/g) || []).map(t => t.slice(1).toLowerCase());
 
     const result = await db.query(
-      `INSERT INTO posts (user_id, content, media_urls, hashtags)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [req.user.id, content || null, JSON.stringify(media_urls), JSON.stringify(hashtagArr)]
+      `INSERT INTO posts (user_id, content, media_urls, hashtags, group_id)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [req.user.id, content || null, JSON.stringify(media_urls), JSON.stringify(hashtagArr), group_id || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
