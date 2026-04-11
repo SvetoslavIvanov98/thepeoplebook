@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '../store/auth.store';
 import { useTheme } from '../hooks/useTheme';
+import Logo from './Logo';
 
 const links = [
   { to: '/feed', label: 'Feed', icon: '🏠' },
@@ -16,7 +17,7 @@ export default function Sidebar() {
 
   return (
     <aside className="hidden md:flex flex-col w-64 pr-4 py-4 sticky top-0 h-screen">
-      <span className="text-2xl font-extrabold text-brand-600 mb-8 px-2">The People Book</span>
+      <Logo size="text-xl" className="mb-8 px-2" />
       <nav className="flex-1 flex flex-col gap-1">
         {links.map(({ to, label, icon }) => (
           <NavLink
