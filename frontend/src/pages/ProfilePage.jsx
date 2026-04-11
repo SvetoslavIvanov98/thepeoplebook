@@ -119,7 +119,7 @@ export default function ProfilePage({ user }) {
         {profile.cover_url && (
           <img src={profile.cover_url} alt="cover" className="absolute inset-0 w-full h-full object-cover" />
         )}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/40 opacity-0 md:group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <span className="text-white text-sm font-semibold">
             {isMe ? 'Change cover photo' : (profile.cover_url ? 'View cover photo' : '')}
           </span>
@@ -137,7 +137,7 @@ export default function ProfilePage({ user }) {
       <div className="px-4 pb-4">
         <div className="flex items-end justify-between -mt-10 mb-3">
           <div
-            className="relative w-24 h-24 cursor-pointer group"
+            className="relative w-24 h-24 rounded-full overflow-hidden border-4 border-white dark:border-gray-950 cursor-pointer group shrink-0"
             onClick={() => {
               if (isMe) avatarInputRef.current?.click();
               else setLightboxUrl(profile.avatar_url || `https://ui-avatars.com/api/?name=${profile.username}&size=256`);
@@ -146,9 +146,9 @@ export default function ProfilePage({ user }) {
             <img
               src={profile.avatar_url || `https://ui-avatars.com/api/?name=${profile.username}&size=96`}
               alt={profile.username}
-              className="w-24 h-24 rounded-full border-4 border-white dark:border-gray-950 object-cover"
+              className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/40 opacity-0 md:group-hover:opacity-100 transition-opacity flex items-center justify-center">
               <span className="text-white text-xs font-semibold text-center leading-tight px-2">
                 {isMe ? 'Change photo' : 'View photo'}
               </span>
