@@ -8,14 +8,21 @@ const getFeed = async (req, res, next) => {
     const cursor = req.query.cursor; // ISO date string for cursor-based pagination
 
     const result = await db.query(
-      `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at,
+      `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at, p.repost_id,
               u.id AS user_id, u.username, u.full_name, u.avatar_url, u.is_verified,
-              (SELECT COUNT(*) FROM likes WHERE post_id = p.id) AS likes_count,
-              (SELECT COUNT(*) FROM comments WHERE post_id = p.id AND deleted_at IS NULL) AS comments_count,
-              (SELECT COUNT(*) FROM posts WHERE repost_id = p.id) AS reposts_count,
-              ${req.user ? `EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = $3)` : 'FALSE'} AS liked_by_me
+              (SELECT COUNT(*) FROM likes WHERE post_id = COALESCE(p.repost_id, p.id)) AS likes_count,
+              (SELECT COUNT(*) FROM comments WHERE post_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS comments_count,
+              (SELECT COUNT(*) FROM posts WHERE repost_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS reposts_count,
+              ${req.user ? `EXISTS(SELECT 1 FROM likes WHERE post_id = COALESCE(p.repost_id, p.id) AND user_id = $3)` : 'FALSE'} AS liked_by_me,
+              ${req.user ? `EXISTS(SELECT 1 FROM posts WHERE user_id = $3 AND repost_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL)` : 'FALSE'} AS has_reposted,
+              op.id AS orig_id, op.content AS orig_content, op.media_urls AS orig_media_urls,
+              op.created_at AS orig_created_at,
+              ou.id AS orig_user_id, ou.username AS orig_username, ou.full_name AS orig_full_name,
+              ou.avatar_url AS orig_avatar_url, ou.is_verified AS orig_is_verified
        FROM posts p
        JOIN users u ON u.id = p.user_id
+       LEFT JOIN posts op ON op.id = p.repost_id AND op.deleted_at IS NULL
+       LEFT JOIN users ou ON ou.id = op.user_id
        WHERE p.deleted_at IS NULL
          AND (p.user_id = $1 OR p.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1))
          AND p.user_id NOT IN (SELECT blocked_id FROM user_blocks WHERE blocker_id = $1)
@@ -57,11 +64,21 @@ const createPost = async (req, res, next) => {
 const getPost = async (req, res, next) => {
   try {
     const result = await db.query(
-      `SELECT p.*, u.username, u.full_name, u.avatar_url, u.is_verified,
-              (SELECT COUNT(*) FROM likes WHERE post_id = p.id) AS likes_count,
-              (SELECT COUNT(*) FROM comments WHERE post_id = p.id AND deleted_at IS NULL) AS comments_count,
-              ${req.user ? `EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = $2)` : 'FALSE'} AS liked_by_me
-       FROM posts p JOIN users u ON u.id = p.user_id
+      `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at, p.repost_id,
+              u.id AS user_id, u.username, u.full_name, u.avatar_url, u.is_verified,
+              (SELECT COUNT(*) FROM likes WHERE post_id = COALESCE(p.repost_id, p.id)) AS likes_count,
+              (SELECT COUNT(*) FROM comments WHERE post_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS comments_count,
+              (SELECT COUNT(*) FROM posts WHERE repost_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS reposts_count,
+              ${req.user ? `EXISTS(SELECT 1 FROM likes WHERE post_id = COALESCE(p.repost_id, p.id) AND user_id = $2)` : 'FALSE'} AS liked_by_me,
+              ${req.user ? `EXISTS(SELECT 1 FROM posts WHERE user_id = $2 AND repost_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL)` : 'FALSE'} AS has_reposted,
+              op.id AS orig_id, op.content AS orig_content, op.media_urls AS orig_media_urls,
+              op.created_at AS orig_created_at,
+              ou.id AS orig_user_id, ou.username AS orig_username, ou.full_name AS orig_full_name,
+              ou.avatar_url AS orig_avatar_url, ou.is_verified AS orig_is_verified
+       FROM posts p
+       JOIN users u ON u.id = p.user_id
+       LEFT JOIN posts op ON op.id = p.repost_id AND op.deleted_at IS NULL
+       LEFT JOIN users ou ON ou.id = op.user_id
        WHERE p.id = $1 AND p.deleted_at IS NULL`,
       req.user ? [req.params.id, req.user.id] : [req.params.id]
     );
@@ -92,11 +109,21 @@ const deletePost = async (req, res, next) => {
 const repost = async (req, res, next) => {
   try {
     const { id: repost_id } = req.params;
-    const original = await db.query('SELECT user_id FROM posts WHERE id = $1', [repost_id]);
+    const original = await db.query('SELECT user_id FROM posts WHERE id = $1 AND deleted_at IS NULL', [repost_id]);
     if (!original.rows[0]) return res.status(404).json({ error: 'Post not found' });
 
-    const result = await db.query(
-      'INSERT INTO posts (user_id, repost_id) VALUES ($1, $2) RETURNING *',
+    // Toggle: un-repost if already reposted
+    const existing = await db.query(
+      'SELECT id FROM posts WHERE user_id = $1 AND repost_id = $2 AND deleted_at IS NULL',
+      [req.user.id, repost_id]
+    );
+    if (existing.rows[0]) {
+      await db.query('UPDATE posts SET deleted_at = NOW() WHERE id = $1', [existing.rows[0].id]);
+      return res.json({ reposted: false });
+    }
+
+    await db.query(
+      'INSERT INTO posts (user_id, repost_id) VALUES ($1, $2)',
       [req.user.id, repost_id]
     );
 
@@ -106,7 +133,7 @@ const repost = async (req, res, next) => {
       });
     }
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json({ reposted: true });
   } catch (err) {
     next(err);
   }
@@ -122,17 +149,26 @@ const getByHashtag = async (req, res, next) => {
       ? cursor ? [JSON.stringify([tag]), limit, req.user.id, cursor] : [JSON.stringify([tag]), limit, req.user.id]
       : cursor ? [JSON.stringify([tag]), limit, cursor] : [JSON.stringify([tag]), limit];
 
-    const likedExpr = req.user ? `EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = $3)` : 'FALSE';
+    const likedExpr = req.user ? `EXISTS(SELECT 1 FROM likes WHERE post_id = COALESCE(p.repost_id, p.id) AND user_id = $3)` : 'FALSE';
+    const repostedExpr = req.user ? `EXISTS(SELECT 1 FROM posts WHERE user_id = $3 AND repost_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL)` : 'FALSE';
     const cursorClause = cursor ? `AND p.created_at < $${req.user ? 4 : 3}` : '';
 
     const result = await db.query(
-      `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at,
+      `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at, p.repost_id,
               u.id AS user_id, u.username, u.full_name, u.avatar_url, u.is_verified,
-              (SELECT COUNT(*) FROM likes WHERE post_id = p.id) AS likes_count,
-              (SELECT COUNT(*) FROM comments WHERE post_id = p.id AND deleted_at IS NULL) AS comments_count,
-              (SELECT COUNT(*) FROM posts WHERE repost_id = p.id) AS reposts_count,
-              ${likedExpr} AS liked_by_me
-       FROM posts p JOIN users u ON u.id = p.user_id
+              (SELECT COUNT(*) FROM likes WHERE post_id = COALESCE(p.repost_id, p.id)) AS likes_count,
+              (SELECT COUNT(*) FROM comments WHERE post_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS comments_count,
+              (SELECT COUNT(*) FROM posts WHERE repost_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS reposts_count,
+              ${likedExpr} AS liked_by_me,
+              ${repostedExpr} AS has_reposted,
+              op.id AS orig_id, op.content AS orig_content, op.media_urls AS orig_media_urls,
+              op.created_at AS orig_created_at,
+              ou.id AS orig_user_id, ou.username AS orig_username, ou.full_name AS orig_full_name,
+              ou.avatar_url AS orig_avatar_url, ou.is_verified AS orig_is_verified
+       FROM posts p
+       JOIN users u ON u.id = p.user_id
+       LEFT JOIN posts op ON op.id = p.repost_id AND op.deleted_at IS NULL
+       LEFT JOIN users ou ON ou.id = op.user_id
        WHERE p.deleted_at IS NULL AND p.hashtags @> $1::jsonb
          ${cursorClause}
        ORDER BY p.created_at DESC

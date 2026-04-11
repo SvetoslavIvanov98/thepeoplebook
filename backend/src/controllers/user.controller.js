@@ -89,11 +89,19 @@ const getUserPosts = async (req, res, next) => {
     const offset = parseInt(req.query.offset) || 0;
 
     const result = await db.query(
-      `SELECT p.*, u.username, u.full_name, u.avatar_url,
-              (SELECT COUNT(*) FROM likes WHERE post_id = p.id) AS likes_count,
-              (SELECT COUNT(*) FROM comments WHERE post_id = p.id) AS comments_count
+      `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at, p.repost_id,
+              u.id AS user_id, u.username, u.full_name, u.avatar_url, u.is_verified,
+              (SELECT COUNT(*) FROM likes WHERE post_id = COALESCE(p.repost_id, p.id)) AS likes_count,
+              (SELECT COUNT(*) FROM comments WHERE post_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS comments_count,
+              (SELECT COUNT(*) FROM posts WHERE repost_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS reposts_count,
+              op.id AS orig_id, op.content AS orig_content, op.media_urls AS orig_media_urls,
+              op.created_at AS orig_created_at,
+              ou.id AS orig_user_id, ou.username AS orig_username, ou.full_name AS orig_full_name,
+              ou.avatar_url AS orig_avatar_url, ou.is_verified AS orig_is_verified
        FROM posts p
        JOIN users u ON u.id = p.user_id
+       LEFT JOIN posts op ON op.id = p.repost_id AND op.deleted_at IS NULL
+       LEFT JOIN users ou ON ou.id = op.user_id
        WHERE u.username = $1 AND p.deleted_at IS NULL
        ORDER BY p.created_at DESC
        LIMIT $2 OFFSET $3`,
