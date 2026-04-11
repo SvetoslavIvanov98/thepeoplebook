@@ -8,6 +8,7 @@ export const useAuthStore = create(
       user: null,
       token: null,
       unreadNotifications: 0,
+      unreadMessages: 0,
 
       setTokens: (token) => set({ token }),
 
@@ -35,6 +36,9 @@ export const useAuthStore = create(
       },
 
       clearUnread: () => set({ unreadNotifications: 0 }),
+
+      addUnreadMessage: () => set((s) => ({ unreadMessages: s.unreadMessages + 1 })),
+      clearUnreadMessages: () => set({ unreadMessages: 0 }),
     }),
     { name: 'auth', partialize: (s) => ({ token: s.token }) }
   )

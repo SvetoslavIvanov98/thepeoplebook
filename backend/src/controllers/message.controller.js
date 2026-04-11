@@ -79,6 +79,18 @@ const getMessages = async (req, res, next) => {
       [conversationId, req.user.id]
     );
 
+    // Notify the other participant(s) their messages were read
+    const io = getIO();
+    if (io) {
+      const others = await db.query(
+        'SELECT user_id FROM conversation_participants WHERE conversation_id = $1 AND user_id != $2',
+        [conversationId, req.user.id]
+      );
+      others.rows.forEach(({ user_id }) =>
+        io.to(`user:${user_id}`).emit('messages_read', { conversationId })
+      );
+    }
+
     res.json(result.rows.reverse());
   } catch (err) {
     next(err);

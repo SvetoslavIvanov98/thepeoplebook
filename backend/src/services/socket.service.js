@@ -38,6 +38,11 @@ const initSocket = (server) => {
       socket.leave(`conv:${conversationId}`);
     });
 
+    // Typing indicator — forward to other members of the conv room
+    socket.on('typing', ({ conversationId }) => {
+      socket.to(`conv:${conversationId}`).emit('typing', { userId: socket.userId, conversationId });
+    });
+
     socket.on('disconnect', () => {});
   });
 

@@ -11,6 +11,13 @@ export const initSocket = (token) => {
     useAuthStore.getState().addNotification(notification);
   });
 
+  // Increment unread message badge when a message arrives while not in the chat
+  socket.on('new_message', () => {
+    if (!window.location.pathname.startsWith('/messages')) {
+      useAuthStore.getState().addUnreadMessage();
+    }
+  });
+
   return socket;
 };
 
@@ -18,3 +25,4 @@ export const getSocket = () => socket;
 
 export const joinConversation = (id) => socket?.emit('join_conversation', id);
 export const leaveConversation = (id) => socket?.emit('leave_conversation', id);
+export const emitTyping = (conversationId) => socket?.emit('typing', { conversationId });

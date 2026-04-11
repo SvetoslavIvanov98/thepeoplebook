@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import Sidebar from '../Sidebar';
 import RightPanel from '../RightPanel';
 import MobileNav from '../MobileNav';
+import FloatingMessageBubble from '../FloatingMessageBubble';
 
 export default function MainLayout() {
   return (
@@ -12,6 +13,7 @@ export default function MainLayout() {
       </main>
       <RightPanel />
       <MobileNav />
+      <FloatingMessageBubble />
     </div>
   );
 }
