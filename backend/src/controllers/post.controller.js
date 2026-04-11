@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { emitNotification } = require('../services/notification.service');
+const { deleteS3Object } = require('../config/s3');
 
 const getFeed = async (req, res, next) => {
   try {
@@ -71,10 +72,14 @@ const getPost = async (req, res, next) => {
 const deletePost = async (req, res, next) => {
   try {
     const result = await db.query(
-      'UPDATE posts SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 RETURNING id',
+      'UPDATE posts SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 RETURNING id, media_urls',
       [req.params.id, req.user.id]
     );
     if (!result.rows[0]) return res.status(403).json({ error: 'Not allowed' });
+
+    const mediaUrls = result.rows[0].media_urls || [];
+    await Promise.all(mediaUrls.map(url => deleteS3Object(url)));
+
     res.json({ success: true });
   } catch (err) {
     next(err);

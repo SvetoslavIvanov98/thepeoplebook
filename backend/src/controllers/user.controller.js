@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { deleteS3Object } = require('../config/s3');
 
 const getProfile = async (req, res, next) => {
   try {
@@ -35,11 +36,23 @@ const updateProfile = async (req, res, next) => {
 
     if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 
+    // Fetch old URLs before overwriting so we can delete them from S3
+    const oldResult = await db.query(
+      'SELECT avatar_url, cover_url FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    const old = oldResult.rows[0] || {};
+
     values.push(req.user.id);
     const result = await db.query(
       `UPDATE users SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${idx} RETURNING id, username, full_name, bio, avatar_url, cover_url`,
       values
     );
+
+    // Remove replaced files from S3
+    if (avatar_url && old.avatar_url) await deleteS3Object(old.avatar_url);
+    if (cover_url && old.cover_url) await deleteS3Object(old.cover_url);
+
     res.json(result.rows[0]);
   } catch (err) {
     next(err);

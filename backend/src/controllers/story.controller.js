@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { deleteS3Object } = require('../config/s3');
 
 const createStory = async (req, res, next) => {
   try {
@@ -36,10 +37,13 @@ const getFeedStories = async (req, res, next) => {
 const deleteStory = async (req, res, next) => {
   try {
     const result = await db.query(
-      'DELETE FROM stories WHERE id = $1 AND user_id = $2 RETURNING id',
+      'DELETE FROM stories WHERE id = $1 AND user_id = $2 RETURNING id, media_url',
       [req.params.id, req.user.id]
     );
     if (!result.rows[0]) return res.status(403).json({ error: 'Not allowed' });
+
+    await deleteS3Object(result.rows[0].media_url);
+
     res.json({ success: true });
   } catch (err) {
     next(err);

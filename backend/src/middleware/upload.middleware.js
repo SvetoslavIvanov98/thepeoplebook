@@ -3,7 +3,7 @@ const multerS3 = require('multer-s3');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const s3 = require('../config/s3');
+const { s3 } = require('../config/s3');
 
 const useS3 = !!process.env.LINODE_S3_BUCKET;
 
