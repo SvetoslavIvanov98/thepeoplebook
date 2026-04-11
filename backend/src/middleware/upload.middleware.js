@@ -21,11 +21,8 @@ const toWebp = (buf, mimetype) => {
 const storage = multer.memoryStorage();
 
 const fileFilter = (_req, file, cb) => {
-  const allowedExts = /\.(jpeg|jpg|png|gif|webp|mp4|mov|avi)$/i;
-  const allowedMimes = /^(image\/(jpeg|png|gif|webp)|video\/(mp4|quicktime|x-msvideo))$/;
-  const extOk = allowedExts.test(path.extname(file.originalname));
-  const mimeOk = allowedMimes.test(file.mimetype);
-  if (extOk && mimeOk) {
+  const allowedMimes = /^(image\/(jpeg|png|gif|webp|heic|heif|bmp|tiff)|video\/(mp4|quicktime|x-msvideo))$/;
+  if (allowedMimes.test(file.mimetype)) {
     cb(null, true);
   } else {
     cb(new Error('File type not allowed'), false);

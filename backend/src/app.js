@@ -25,6 +25,9 @@ const blockRoutes = require('./routes/block.routes');
 
 const app = express();
 
+// Trust first proxy (nginx) so express-rate-limit reads X-Forwarded-For correctly
+app.set('trust proxy', 1);
+
 // Security
 app.use(helmet());
 app.use(cors({
