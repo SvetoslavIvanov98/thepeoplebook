@@ -109,4 +109,37 @@ const repost = async (req, res, next) => {
   }
 };
 
-module.exports = { getFeed, createPost, getPost, deletePost, repost };
+const getByHashtag = async (req, res, next) => {
+  try {
+    const tag = req.params.tag.toLowerCase();
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const cursor = req.query.cursor;
+
+    const params = req.user
+      ? cursor ? [JSON.stringify([tag]), limit, req.user.id, cursor] : [JSON.stringify([tag]), limit, req.user.id]
+      : cursor ? [JSON.stringify([tag]), limit, cursor] : [JSON.stringify([tag]), limit];
+
+    const likedExpr = req.user ? `EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = $3)` : 'FALSE';
+    const cursorClause = cursor ? `AND p.created_at < $${req.user ? 4 : 3}` : '';
+
+    const result = await db.query(
+      `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at,
+              u.id AS user_id, u.username, u.full_name, u.avatar_url, u.is_verified,
+              (SELECT COUNT(*) FROM likes WHERE post_id = p.id) AS likes_count,
+              (SELECT COUNT(*) FROM comments WHERE post_id = p.id AND deleted_at IS NULL) AS comments_count,
+              (SELECT COUNT(*) FROM posts WHERE repost_id = p.id) AS reposts_count,
+              ${likedExpr} AS liked_by_me
+       FROM posts p JOIN users u ON u.id = p.user_id
+       WHERE p.deleted_at IS NULL AND p.hashtags @> $1::jsonb
+         ${cursorClause}
+       ORDER BY p.created_at DESC
+       LIMIT $2`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getFeed, createPost, getPost, deletePost, repost, getByHashtag };

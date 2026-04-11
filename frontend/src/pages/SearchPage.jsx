@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import PostCard from '../components/post/PostCard';
 
 export default function SearchPage() {
   const [q, setQ] = useState('');
   const [submitted, setSubmitted] = useState('');
+  const navigate = useNavigate();
 
   const { data, isFetching } = useQuery({
     queryKey: ['search', submitted],
@@ -57,10 +58,10 @@ export default function SearchPage() {
               <h2 className="font-bold mb-3">Hashtags</h2>
               <div className="flex flex-wrap gap-2">
                 {data.hashtags.map((tag) => (
-                  <button key={tag} onClick={() => { setQ(`#${tag}`); setSubmitted(`#${tag}`); }}
+                  <Link key={tag} to={`/hashtag/${tag}`}
                     className="bg-brand-100 dark:bg-brand-900/20 text-brand-700 dark:text-brand-400 rounded-full px-3 py-1 text-sm">
                     #{tag}
-                  </button>
+                  </Link>
                 ))}
               </div>
             </section>

@@ -67,7 +67,20 @@ export default function PostCard({ post, onDelete }) {
           </div>
 
           {post.content && (
-            <p className="mt-1 text-sm whitespace-pre-wrap break-words">{post.content}</p>
+            <p className="mt-1 text-sm whitespace-pre-wrap break-words">
+              {post.content.split(/(#\w+)/g).map((part, i) =>
+                /^#\w+$/.test(part) ? (
+                  <Link
+                    key={i}
+                    to={`/hashtag/${part.slice(1).toLowerCase()}`}
+                    className="text-brand-500 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {part}
+                  </Link>
+                ) : part
+              )}
+            </p>
           )}
 
           {media.length > 0 && (

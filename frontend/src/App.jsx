@@ -21,6 +21,7 @@ import StoriesPage from './pages/StoriesPage';
 import GroupPage from './pages/GroupPage';
 import GroupsPage from './pages/GroupsPage';
 import SearchPage from './pages/SearchPage';
+import HashtagPage from './pages/HashtagPage';
 
 const PrivateRoute = ({ children }) => {
   const token = useAuthStore((s) => s.token);
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="/groups" element={<GroupsPage />} />
           <Route path="/groups/:id" element={<GroupPage />} />
           <Route path="/post/:id" element={<PostPage />} />
+          <Route path="/hashtag/:tag" element={<HashtagPage />} />
           <Route path="/:username" element={<ProfilePage />} />
         </Route>
       </Routes>
