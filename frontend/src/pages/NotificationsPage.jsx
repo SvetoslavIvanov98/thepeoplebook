@@ -41,7 +41,7 @@ export default function NotificationsPage() {
       )}
 
       {(notifications || []).map((n) => (
-        <div key={n.id} className={`flex items-start gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 ${!n.read ? 'bg-brand-50 dark:bg-brand-900/10' : ''}`}>
+        <div key={n.id} className={`flex items-start gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 ${!n.read ? 'bg-brand-50 dark:bg-brand-900/10' : 'bg-white dark:bg-gray-950'}`}>
           <Link to={`/${n.actor_username}`}>
             <img
               src={n.actor_avatar || `https://ui-avatars.com/api/?name=${n.actor_username}`}
@@ -50,8 +50,8 @@ export default function NotificationsPage() {
             />
           </Link>
           <div className="flex-1">
-            <p className="text-sm">
-              <Link to={`/${n.actor_username}`} className="font-semibold hover:underline">
+            <p className="text-sm text-gray-900 dark:text-gray-100">
+              <Link to={`/${n.actor_username}`} className="font-semibold hover:underline text-gray-900 dark:text-gray-100">
                 {n.actor_name || n.actor_username}
               </Link>{' '}
               {TYPE_LABEL[n.type] || n.type}
