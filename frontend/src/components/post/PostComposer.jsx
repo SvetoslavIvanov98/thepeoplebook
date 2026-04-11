@@ -54,7 +54,11 @@ export default function PostComposer({ groupId = null }) {
             <div className="flex gap-2 flex-wrap mt-2">
               {files.map((f, i) => (
                 <div key={i} className="relative">
-                  <img src={URL.createObjectURL(f)} alt="" className="h-20 w-20 object-cover rounded-lg" />
+                  {f.type.startsWith('video/') ? (
+                    <video src={URL.createObjectURL(f)} className="h-20 w-20 object-cover rounded-lg" muted />
+                  ) : (
+                    <img src={URL.createObjectURL(f)} alt="" className="h-20 w-20 object-cover rounded-lg" />
+                  )}
                   <button
                     type="button"
                     onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))}

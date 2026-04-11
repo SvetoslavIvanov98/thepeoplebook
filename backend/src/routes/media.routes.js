@@ -17,7 +17,7 @@ const memUpload = multer({
     const mimeOk = allowedMimes.test(file.mimetype);
     cb(extOk && mimeOk ? null : new Error('File type not allowed'), extOk && mimeOk);
   },
-  limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 10) * 1024 * 1024 },
+  limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 200) * 1024 * 1024 },
 });
 
 router.post('/upload', authenticate, memUpload.single('file'), async (req, res, next) => {

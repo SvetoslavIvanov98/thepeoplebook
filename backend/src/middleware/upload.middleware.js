@@ -45,7 +45,7 @@ const fileFilter = (_req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 10) * 1024 * 1024 },
+  limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB) || 200) * 1024 * 1024 },
 });
 
 // Normalise req.file / req.files location so controllers always read file.location
