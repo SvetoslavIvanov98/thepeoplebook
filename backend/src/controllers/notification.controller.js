@@ -30,4 +30,36 @@ const markRead = async (req, res, next) => {
   }
 };
 
-module.exports = { getNotifications, markRead };
+const registerPushToken = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'token is required' });
+    }
+    await db.query(
+      `INSERT INTO push_tokens (user_id, token)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, token) DO NOTHING`,
+      [req.user.id, token]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const removePushToken = async (req, res, next) => {
+  try {
+    const { token } = req.body;
+    if (!token) return res.status(400).json({ error: 'token is required' });
+    await db.query(
+      'DELETE FROM push_tokens WHERE user_id = $1 AND token = $2',
+      [req.user.id, token]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+module.exports = { getNotifications, markRead, registerPushToken, removePushToken };

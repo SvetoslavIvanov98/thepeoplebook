@@ -1,5 +1,17 @@
 const db = require('../config/db');
 const { getIO } = require('./socket.service');
+const { sendPush } = require('./push.service');
+
+const NOTIFICATION_TITLES = {
+  like: 'liked your post',
+  comment: 'commented on your post',
+  follow: 'started following you',
+  repost: 'reposted your post',
+  group_invite: 'invited you to a group',
+  group_join_request: 'requested to join your group',
+  group_join_approved: 'approved your join request',
+  mention: 'mentioned you',
+};
 
 const emitNotification = async (userId, payload) => {
   try {
@@ -10,6 +22,18 @@ const emitNotification = async (userId, payload) => {
     );
     const io = getIO();
     if (io) io.to(`user:${userId}`).emit('notification', result.rows[0]);
+
+    // Send push notification
+    if (payload.actor_id) {
+      const actor = await db.query('SELECT username FROM users WHERE id = $1', [payload.actor_id]);
+      const actorName = actor.rows[0]?.username || 'Someone';
+      const body = `${actorName} ${NOTIFICATION_TITLES[payload.type] || 'sent you a notification'}`;
+      sendPush(userId, {
+        title: 'New notification',
+        body,
+        data: { type: payload.type, post_id: payload.post_id, group_id: payload.group_id },
+      }).catch(err => console.error('Push notification error', err));
+    }
   } catch (err) {
     console.error('Notification error', err);
   }

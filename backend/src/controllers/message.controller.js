@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { getIO } = require('../services/socket.service');
+const { sendPush } = require('../services/push.service');
 
 const getConversations = async (req, res, next) => {
   try {
@@ -127,6 +128,21 @@ const sendMessage = async (req, res, next) => {
       );
       // Also emit to the conv room so the sender's socket sees it (dedup handled on frontend)
       io.to(`conv:${conversationId}`).emit('new_message', msg);
+    }
+
+    // Send push notification to other participants
+    const sender = await db.query('SELECT username FROM users WHERE id = $1', [req.user.id]);
+    const senderName = sender.rows[0]?.username || 'Someone';
+    const recipientRows = await db.query(
+      'SELECT user_id FROM conversation_participants WHERE conversation_id = $1 AND user_id != $2',
+      [conversationId, req.user.id]
+    );
+    for (const { user_id } of recipientRows.rows) {
+      sendPush(user_id, {
+        title: senderName,
+        body: content || '📷 Media',
+        data: { type: 'message', conversationId },
+      }).catch(err => console.error('Message push error', err));
     }
 
     res.status(201).json(msg);
