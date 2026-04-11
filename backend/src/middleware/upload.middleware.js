@@ -52,7 +52,6 @@ const processFile = async (file) => {
       Key: key,
       Body: buf,
       ContentType: contentType,
-      ACL: 'public-read',
     }));
     const baseUrl = (process.env.LINODE_S3_PUBLIC_URL || '').replace(/\/$/, '');
     file.location = baseUrl ? `${baseUrl}/${key}` : key;
