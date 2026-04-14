@@ -6,6 +6,7 @@ import CookieBanner from './components/CookieBanner';
 
 import MainLayout from './components/layout/MainLayout';
 import AuthLayout from './components/layout/AuthLayout';
+import AdminLayout from './components/layout/AdminLayout';
 
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -22,6 +23,10 @@ import GroupPage from './pages/GroupPage';
 import GroupsPage from './pages/GroupsPage';
 import SearchPage from './pages/SearchPage';
 import HashtagPage from './pages/HashtagPage';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminPostsPage from './pages/admin/AdminPostsPage';
+import AdminGroupsPage from './pages/admin/AdminGroupsPage';
 
 const PrivateRoute = ({ children }) => {
   const token = useAuthStore((s) => s.token);
@@ -31,6 +36,15 @@ const PrivateRoute = ({ children }) => {
 const GuestRoute = ({ children }) => {
   const token = useAuthStore((s) => s.token);
   return !token ? children : <Navigate to="/" replace />;
+};
+
+const AdminRoute = ({ children }) => {
+  const { token, user } = useAuthStore();
+  if (!token) return <Navigate to="/login" replace />;
+  // Wait for fetchMe to complete before checking role
+  if (!user) return null;
+  if (user.role !== 'admin') return <Navigate to="/feed" replace />;
+  return children;
 };
 
 export default function App() {
@@ -71,6 +85,14 @@ export default function App() {
           <Route path="/post/:id" element={<PostPage />} />
           <Route path="/hashtag/:tag" element={<HashtagPage />} />
           <Route path="/:username" element={<ProfilePage />} />
+        </Route>
+
+        {/* Admin routes */}
+        <Route element={<AdminRoute><AdminLayout /></AdminRoute>}>
+          <Route path="/admin" element={<AdminDashboardPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
+          <Route path="/admin/posts" element={<AdminPostsPage />} />
+          <Route path="/admin/groups" element={<AdminGroupsPage />} />
         </Route>
       </Routes>
     </>

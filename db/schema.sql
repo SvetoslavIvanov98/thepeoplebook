@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS users (
 -- Idempotent column additions (safe to run on existing databases)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_users_username ON users USING gin (username gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_users_full_name ON users USING gin (full_name gin_trgm_ops);

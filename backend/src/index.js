@@ -34,6 +34,19 @@ const applyMigrations = async () => {
     )
   `);
   await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES groups(id) ON DELETE CASCADE`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE`);
+
+  // Promote the configured admin user if set
+  const adminUsername = process.env.ADMIN_USERNAME;
+  if (adminUsername) {
+    const result = await pool.query(
+      `UPDATE users SET role = 'admin' WHERE username = $1 AND role != 'admin' RETURNING username`,
+      [adminUsername]
+    );
+    if (result.rows[0]) console.log(`Promoted '${adminUsername}' to admin`);
+  }
+
   console.log('Migrations applied');
 };
 

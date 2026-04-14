@@ -12,7 +12,7 @@ passport.use(new JwtStrategy(
   async (payload, done) => {
     try {
       const result = await db.query(
-        'SELECT id, username, email, avatar_url, is_verified FROM users WHERE id = $1',
+        'SELECT id, username, email, avatar_url, is_verified, role FROM users WHERE id = $1',
         [payload.sub]
       );
       if (!result.rows[0]) return done(null, false);
