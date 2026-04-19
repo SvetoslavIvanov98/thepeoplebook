@@ -109,7 +109,7 @@ export default function AdminReportsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'reports', page, status],
     queryFn: () => api.get('/admin/reports', { params: { page, limit: 20, status: status || undefined } }).then((r) => r.data),
-    keepPreviousData: true,
+    placeholderData: (prev) => prev,
   });
 
   return (
