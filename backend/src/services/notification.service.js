@@ -11,6 +11,7 @@ const NOTIFICATION_TITLES = {
   group_join_request: 'requested to join your group',
   group_join_approved: 'approved your join request',
   mention: 'mentioned you',
+  moderation_decision: 'A moderation decision has been issued on your account',
 };
 
 const emitNotification = async (userId, payload) => {
@@ -32,6 +33,12 @@ const emitNotification = async (userId, payload) => {
         title: 'New notification',
         body,
         data: { type: payload.type, post_id: payload.post_id, group_id: payload.group_id },
+      }).catch(err => console.error('Push notification error', err));
+    } else if (payload.type === 'moderation_decision') {
+      sendPush(userId, {
+        title: 'Moderation notice',
+        body: NOTIFICATION_TITLES.moderation_decision,
+        data: { type: payload.type },
       }).catch(err => console.error('Push notification error', err));
     }
   } catch (err) {

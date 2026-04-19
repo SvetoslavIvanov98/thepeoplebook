@@ -35,13 +35,14 @@ const register = async (req, res, next) => {
   try {
     const { username, email, password, full_name, date_of_birth } = req.body;
 
-    if (date_of_birth) {
-      const dob = new Date(date_of_birth);
-      const cutoff = new Date();
-      cutoff.setFullYear(cutoff.getFullYear() - MIN_AGE_YEARS);
-      if (isNaN(dob.getTime()) || dob > cutoff) {
-        return res.status(400).json({ error: `You must be at least ${MIN_AGE_YEARS} years old to register (GDPR Art. 8).` });
-      }
+    if (!date_of_birth) {
+      return res.status(400).json({ error: 'Date of birth is required.' });
+    }
+    const dob = new Date(date_of_birth);
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - MIN_AGE_YEARS);
+    if (isNaN(dob.getTime()) || dob > cutoff) {
+      return res.status(400).json({ error: `You must be at least ${MIN_AGE_YEARS} years old to register (GDPR Art. 8).` });
     }
 
     const exists = await db.query('SELECT id FROM users WHERE email = $1 OR username = $2', [email, username]);

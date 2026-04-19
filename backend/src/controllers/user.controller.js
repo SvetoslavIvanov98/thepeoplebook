@@ -141,9 +141,12 @@ const exportMyData = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    const [userResult, postsResult, commentsResult, followingResult, followersResult] = await Promise.all([
+    const [
+      userResult, postsResult, commentsResult, followingResult, followersResult,
+      storiesResult, notificationsResult, messagesResult, blocksResult, mutesResult,
+    ] = await Promise.all([
       db.query(
-        'SELECT id, username, email, full_name, bio, avatar_url, is_verified, created_at FROM users WHERE id = $1',
+        'SELECT id, username, email, full_name, bio, avatar_url, date_of_birth, is_verified, created_at FROM users WHERE id = $1',
         [userId]
       ),
       db.query(
@@ -162,6 +165,29 @@ const exportMyData = async (req, res, next) => {
         'SELECT u.username, u.full_name, f.created_at AS followed_at FROM follows f JOIN users u ON u.id = f.follower_id WHERE f.following_id = $1',
         [userId]
       ),
+      db.query(
+        'SELECT id, media_url, created_at, expires_at FROM stories WHERE user_id = $1 ORDER BY created_at DESC',
+        [userId]
+      ),
+      db.query(
+        'SELECT id, type, actor_id, post_id, comment_id, read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC',
+        [userId]
+      ),
+      db.query(
+        `SELECT m.id, m.conversation_id, m.content, m.media_url, m.created_at
+         FROM messages m
+         WHERE m.sender_id = $1
+         ORDER BY m.created_at DESC`,
+        [userId]
+      ),
+      db.query(
+        'SELECT b.blocked_id, u.username, b.created_at FROM user_blocks b JOIN users u ON u.id = b.blocked_id WHERE b.blocker_id = $1',
+        [userId]
+      ),
+      db.query(
+        'SELECT m.muted_id, u.username, m.created_at FROM user_mutes m JOIN users u ON u.id = m.muted_id WHERE m.muter_id = $1',
+        [userId]
+      ),
     ]);
 
     const exportData = {
@@ -171,6 +197,11 @@ const exportMyData = async (req, res, next) => {
       comments: commentsResult.rows,
       following: followingResult.rows,
       followers: followersResult.rows,
+      stories: storiesResult.rows,
+      notifications: notificationsResult.rows,
+      messages_sent: messagesResult.rows,
+      blocked_users: blocksResult.rows,
+      muted_users: mutesResult.rows,
     };
 
     res.setHeader('Content-Type', 'application/json');

@@ -220,3 +220,43 @@ CREATE TABLE IF NOT EXISTS push_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens (user_id);
+
+-- ─── Content Reports (DSA Art. 16) ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS content_reports (
+  id              BIGSERIAL PRIMARY KEY,
+  reporter_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  post_id         BIGINT REFERENCES posts(id) ON DELETE CASCADE,
+  comment_id      BIGINT REFERENCES comments(id) ON DELETE CASCADE,
+  reason          VARCHAR(50) NOT NULL,  -- illegal_content, harassment, spam, misinformation, other
+  reported_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+  description     TEXT,
+  status          VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending, reviewed, action_taken, dismissed
+  admin_note      TEXT,
+  decided_by      BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  decided_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT report_has_target CHECK (post_id IS NOT NULL OR comment_id IS NOT NULL OR reported_user_id IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_reports_post ON content_reports (post_id) WHERE post_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_content_reports_comment ON content_reports (comment_id) WHERE comment_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_content_reports_user ON content_reports (reported_user_id) WHERE reported_user_id IS NOT NULL;
+
+-- ─── Moderation Decisions / Statement of Reasons (DSA Art. 17) ───────────────
+CREATE TABLE IF NOT EXISTS moderation_decisions (
+  id              BIGSERIAL PRIMARY KEY,
+  report_id       BIGINT REFERENCES content_reports(id) ON DELETE SET NULL,
+  target_user_id  BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_type     VARCHAR(30) NOT NULL,  -- content_removed, account_suspended, warning, no_action
+  reason          TEXT NOT NULL,
+  legal_basis     TEXT,
+  decided_by      BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  appealed        BOOLEAN NOT NULL DEFAULT FALSE,
+  appeal_outcome  VARCHAR(20),  -- upheld, overturned, NULL
+  appeal_note     TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_moderation_decisions_user ON moderation_decisions (target_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_moderation_decisions_report ON moderation_decisions (report_id) WHERE report_id IS NOT NULL;

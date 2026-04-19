@@ -25,8 +25,9 @@ export default function CookieBanner() {
     >
       <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-start sm:items-center gap-4 px-6 py-4">
         <p className="text-sm text-gray-600 dark:text-gray-300 flex-1">
-          🍪 We use one strictly necessary cookie to keep you securely logged in. No advertising or
-          tracking cookies are used.{' '}
+          🍪 We use one strictly necessary cookie (<code className="text-xs">refresh_token</code>) to keep you
+          logged in, and store a few items in your browser's local storage for authentication, theme preference,
+          and remembering that you've seen this notice. No advertising or tracking cookies are used.{' '}
           <Link to="/privacy" className="text-brand-600 hover:underline font-medium">
             Learn more in our Privacy Policy
           </Link>

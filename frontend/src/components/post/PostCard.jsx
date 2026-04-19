@@ -5,6 +5,7 @@ import { useState } from 'react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
 import MediaLightbox from '../MediaLightbox';
+import ReportButton from '../ReportButton';
 import toast from 'react-hot-toast';
 
 function PostContent({ content, media, onMediaClick }) {
@@ -139,13 +140,17 @@ export default function PostCard({ post, onDelete }) {
             <Link to={`/post/${targetId}`} className="text-gray-400 text-xs hover:underline">
               {formatDistanceToNow(new Date(displayCreatedAt), { addSuffix: true })}
             </Link>
-            {user?.id === post.user_id && (
+            {user?.id === post.user_id ? (
               <button
                 onClick={() => deletePost()}
                 className="ml-auto text-xs text-red-400 hover:text-red-600"
               >
                 {isRepost ? 'Remove repost' : 'Delete'}
               </button>
+            ) : (
+              <span className="ml-auto">
+                <ReportButton postId={targetId} />
+              </span>
             )}
           </div>
 

@@ -11,6 +11,7 @@ const TYPE_LABEL = {
   follow: '👤 followed you',
   repost: '🔁 reposted your post',
   message: '✉️ sent you a message',
+  moderation_decision: '⚠️ A moderation decision has been issued on your account',
 };
 
 function GroupInviteActions({ notification, onRespond }) {
@@ -76,18 +77,24 @@ export default function NotificationsPage() {
 
       {(notifications || []).map((n) => (
         <div key={n.id} className={`flex items-start gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 ${!n.read ? 'bg-brand-50 dark:bg-brand-900/10' : 'bg-white dark:bg-gray-950'}`}>
-          <Link to={`/${n.actor_username}`}>
-            <img
-              src={n.actor_avatar || `https://ui-avatars.com/api/?name=${n.actor_username}`}
-              alt={n.actor_username}
-              className="w-10 h-10 rounded-full object-cover"
-            />
-          </Link>
+          {n.type === 'moderation_decision' ? (
+            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-lg shrink-0">⚠️</div>
+          ) : (
+            <Link to={`/${n.actor_username}`}>
+              <img
+                src={n.actor_avatar || `https://ui-avatars.com/api/?name=${n.actor_username}`}
+                alt={n.actor_username}
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            </Link>
+          )}
           <div className="flex-1">
             <p className="text-sm text-gray-900 dark:text-gray-100">
-              <Link to={`/${n.actor_username}`} className="font-semibold hover:underline text-gray-900 dark:text-gray-100">
-                {n.actor_name || n.actor_username}
-              </Link>{' '}
+              {n.type !== 'moderation_decision' && (
+                <><Link to={`/${n.actor_username}`} className="font-semibold hover:underline text-gray-900 dark:text-gray-100">
+                  {n.actor_name || n.actor_username}
+                </Link>{' '}</>
+              )}
               {n.type === 'group_invite' ? (
                 <>
                   invited you to join{' '}
@@ -109,6 +116,9 @@ export default function NotificationsPage() {
           </div>
           {n.post_id && (
             <Link to={`/post/${n.post_id}`} className="text-xs text-brand-500 hover:underline">View</Link>
+          )}
+          {n.type === 'moderation_decision' && (
+            <Link to="/settings" className="text-xs text-brand-500 hover:underline shrink-0">View details</Link>
           )}
         </div>
       ))}

@@ -12,10 +12,11 @@ passport.use(new JwtStrategy(
   async (payload, done) => {
     try {
       const result = await db.query(
-        'SELECT id, username, email, avatar_url, is_verified, role FROM users WHERE id = $1',
+        'SELECT id, username, email, avatar_url, is_verified, role, is_banned FROM users WHERE id = $1',
         [payload.sub]
       );
       if (!result.rows[0]) return done(null, false);
+      if (result.rows[0].is_banned) return done(null, false, { message: 'Account suspended' });
       return done(null, result.rows[0]);
     } catch (err) {
       return done(err, false);

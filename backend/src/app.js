@@ -23,6 +23,7 @@ const mediaRoutes = require('./routes/media.routes');
 const statsRoutes = require('./routes/stats.routes');
 const blockRoutes = require('./routes/block.routes');
 const adminRoutes = require('./routes/admin.routes');
+const reportRoutes = require('./routes/report.routes');
 
 const app = express();
 
@@ -83,6 +84,7 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/users', blockRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Serve local uploads directory (dev only — S3 is used in production)
 if (!process.env.LINODE_S3_BUCKET) {

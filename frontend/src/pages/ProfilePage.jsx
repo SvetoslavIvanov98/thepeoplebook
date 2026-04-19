@@ -1,8 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
 import PostCard from '../components/post/PostCard';
+import ReportButton from '../components/ReportButton';
 import MediaLightbox from '../components/MediaLightbox';
 import { useState, useRef } from 'react';
 import toast from 'react-hot-toast';
@@ -187,12 +188,20 @@ export default function ProfilePage({ user }) {
             />
           </div>
           {isMe ? (
-            <button
-              onClick={() => { setBio(profile.bio || ''); setFullName(profile.full_name || ''); setEditOpen(true); }}
-              className="border border-gray-300 dark:border-gray-700 rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-gray-100 dark:hover:bg-gray-800"
-            >
-              Edit profile
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setBio(profile.bio || ''); setFullName(profile.full_name || ''); setEditOpen(true); }}
+                className="border border-gray-300 dark:border-gray-700 rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Edit profile
+              </button>
+              <Link
+                to="/settings"
+                className="border border-gray-300 dark:border-gray-700 rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Settings
+              </Link>
+            </div>
           ) : (
             <div className="flex gap-2">
               <button
@@ -244,6 +253,7 @@ export default function ProfilePage({ user }) {
                     >
                       {profile.is_blocked ? '🚫 Unblock' : '🚫 Block'}
                     </button>
+                    <ReportButton userId={profile.id} variant="menu" />
                   </div>
                 )}
               </div>

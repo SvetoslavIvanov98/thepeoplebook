@@ -4,6 +4,7 @@ const { requireAdmin } = require('../middleware/admin.middleware');
 const {
   getStats, getUsers, setUserRole, setBan,
   getPosts, deletePost, getGroups, deleteGroup,
+  getReports, resolveReport, getAppeals, resolveAppeal,
 } = require('../controllers/admin.controller');
 
 router.use(authenticate, requireAdmin);
@@ -19,5 +20,11 @@ router.delete('/posts/:id', deletePost);
 
 router.get('/groups', getGroups);
 router.delete('/groups/:id', deleteGroup);
+
+router.get('/reports', getReports);
+router.post('/reports/:id/resolve', resolveReport);
+
+router.get('/appeals', getAppeals);
+router.post('/appeals/:id/resolve', resolveAppeal);
 
 module.exports = router;

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
 import api from '../services/api';
 import PostCard from '../components/post/PostCard';
+import ReportButton from '../components/ReportButton';
 import { useState } from 'react';
 import { useAuthStore } from '../store/auth.store';
 import toast from 'react-hot-toast';
@@ -73,8 +74,11 @@ export default function PostPage() {
               alt={c.username}
               className="w-8 h-8 rounded-full object-cover"
             />
-            <div>
-              <p className="font-semibold text-sm">{c.full_name || c.username} <span className="text-gray-400 font-normal text-xs">@{c.username}</span></p>
+            <div className="flex-1">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-sm">{c.full_name || c.username} <span className="text-gray-400 font-normal text-xs">@{c.username}</span></p>
+                {c.user_id !== user?.id && <ReportButton commentId={c.id} />}
+              </div>
               <p className="text-sm whitespace-pre-wrap">{c.content}</p>
             </div>
           </div>

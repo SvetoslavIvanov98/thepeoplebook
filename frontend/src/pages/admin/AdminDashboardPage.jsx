@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import api from '../../services/api';
-import { Users, FileText, MessageSquare, Users2, BookOpen, TrendingUp } from 'lucide-react';
+import { Users, FileText, MessageSquare, Users2, BookOpen, TrendingUp, Flag } from 'lucide-react';
 
 function StatCard({ label, value, icon: Icon, sub }) {
   return (
@@ -34,6 +34,7 @@ export default function AdminDashboardPage() {
         <StatCard label="Total Comments" value={data?.total_comments} icon={MessageSquare} />
         <StatCard label="Total Groups" value={data?.total_groups} icon={Users2} />
         <StatCard label="Total Stories" value={data?.total_stories} icon={BookOpen} />
+        <StatCard label="Pending Reports" value={data?.pending_reports} icon={Flag} />
       </div>
     </div>
   );

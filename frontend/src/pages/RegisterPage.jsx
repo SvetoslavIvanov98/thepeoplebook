@@ -6,7 +6,7 @@ import { useAuthStore } from '../store/auth.store';
 import toast from 'react-hot-toast';
 
 export default function RegisterPage() {
-  const [form, setForm] = useState({ username: '', email: '', password: '', full_name: '' });
+  const [form, setForm] = useState({ username: '', email: '', password: '', full_name: '', date_of_birth: '' });
   const [agreedToPrivacy, setAgreedToPrivacy] = useState(false);
   const [agreedToAge, setAgreedToAge] = useState(false);
   const { login } = useAuthStore();
@@ -35,6 +35,12 @@ export default function RegisterPage() {
         className="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-800 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500" />
       <input type="password" placeholder="Password (min 8 chars)" required minLength={8} value={form.password} onChange={set('password')}
         className="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-800 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500" />
+      <div>
+        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Date of birth</label>
+        <input type="date" required value={form.date_of_birth} onChange={set('date_of_birth')}
+          max={new Date(new Date().setFullYear(new Date().getFullYear() - 16)).toISOString().split('T')[0]}
+          className="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-800 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500" />
+      </div>
       <label className="flex items-start gap-3 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
         <input
           type="checkbox"

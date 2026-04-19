@@ -13,6 +13,7 @@ import RegisterPage from './pages/RegisterPage';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import LandingPage from './pages/LandingPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import TermsOfServicePage from './pages/TermsOfServicePage';
 import FeedPage from './pages/FeedPage';
 import ProfilePage from './pages/ProfilePage';
 import PostPage from './pages/PostPage';
@@ -27,6 +28,8 @@ import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminPostsPage from './pages/admin/AdminPostsPage';
 import AdminGroupsPage from './pages/admin/AdminGroupsPage';
+import AdminReportsPage from './pages/admin/AdminReportsPage';
+import SettingsPage from './pages/SettingsPage';
 
 const PrivateRoute = ({ children }) => {
   const token = useAuthStore((s) => s.token);
@@ -64,6 +67,7 @@ export default function App() {
         {/* Public pages */}
         <Route path="/" element={token ? <Navigate to="/feed" replace /> : <LandingPage />} />
         <Route path="/privacy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsOfServicePage />} />
 
         {/* Guest routes */}
         <Route element={<AuthLayout />}>
@@ -84,6 +88,7 @@ export default function App() {
           <Route path="/groups/:id" element={<GroupPage />} />
           <Route path="/post/:id" element={<PostPage />} />
           <Route path="/hashtag/:tag" element={<HashtagPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/:username" element={<ProfilePage />} />
         </Route>
 
@@ -93,6 +98,7 @@ export default function App() {
           <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/admin/posts" element={<AdminPostsPage />} />
           <Route path="/admin/groups" element={<AdminGroupsPage />} />
+          <Route path="/admin/reports" element={<AdminReportsPage />} />
         </Route>
       </Routes>
     </>
