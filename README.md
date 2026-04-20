@@ -1,5 +1,7 @@
 # The People Book
 
+[![Watch the demo](https://img.youtube.com/vi/Li9VcNrbDqY/maxresdefault.jpg)](https://youtu.be/Li9VcNrbDqY)
+
 A privacy-first, full-stack social network built with:
 - **Frontend**: React 18 + Vite + TailwindCSS + TanStack Query + Zustand
 - **Backend**: Node.js + Express + Socket.IO + Passport
