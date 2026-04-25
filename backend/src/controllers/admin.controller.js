@@ -49,9 +49,9 @@ const getUsers = async (req, res, next) => {
     const [rows, total] = await Promise.all([
       db.query(
         `SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.is_verified, u.role, u.created_at,
-                (SELECT COUNT(*) FROM posts WHERE user_id = u.id AND deleted_at IS NULL) AS post_count,
-                (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) AS following_count,
-                (SELECT COUNT(*) FROM follows WHERE following_id = u.id) AS followers_count
+                u.post_count,
+                u.following_count,
+                u.followers_count
          FROM users u
          ${whereClause}
          ORDER BY u.created_at DESC
@@ -137,8 +137,8 @@ const getPosts = async (req, res, next) => {
       db.query(
         `SELECT p.id, p.content, p.media_urls, p.created_at,
                 u.id AS user_id, u.username, u.avatar_url,
-                (SELECT COUNT(*) FROM likes WHERE post_id = p.id) AS like_count,
-                (SELECT COUNT(*) FROM comments WHERE post_id = p.id AND deleted_at IS NULL) AS comment_count
+                p.likes_count AS like_count,
+                p.comments_count AS comment_count
          FROM posts p
          JOIN users u ON u.id = p.user_id
          ${whereClause}
@@ -189,8 +189,8 @@ const getGroups = async (req, res, next) => {
       db.query(
         `SELECT g.id, g.name, g.description, g.cover_url, g.privacy, g.created_at,
                 u.username AS owner_username,
-                (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) AS member_count,
-                (SELECT COUNT(*) FROM posts WHERE group_id = g.id AND deleted_at IS NULL) AS post_count
+                g.members_count AS member_count,
+                g.post_count
          FROM groups g
          JOIN users u ON u.id = g.owner_id
          ORDER BY g.created_at DESC

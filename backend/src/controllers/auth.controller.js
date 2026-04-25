@@ -143,8 +143,8 @@ const me = async (req, res, next) => {
   try {
     const result = await db.query(
       `SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.bio, u.is_verified, u.role, u.is_banned, u.created_at,
-              (SELECT COUNT(*) FROM follows WHERE following_id = u.id) AS followers_count,
-              (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) AS following_count
+              u.followers_count,
+              u.following_count
        FROM users u WHERE u.id = $1`,
       [req.user.id]
     );

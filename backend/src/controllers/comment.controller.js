@@ -9,7 +9,7 @@ const getComments = async (req, res, next) => {
     const result = await db.query(
       `SELECT c.id, c.content, c.created_at, c.parent_id,
               u.id AS user_id, u.username, u.full_name, u.avatar_url,
-              (SELECT COUNT(*) FROM likes WHERE comment_id = c.id) AS likes_count
+              c.likes_count
        FROM comments c JOIN users u ON u.id = c.user_id
        WHERE c.post_id = $1 AND c.deleted_at IS NULL AND c.parent_id IS NULL
        ORDER BY c.created_at ASC

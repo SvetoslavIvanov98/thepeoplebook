@@ -6,8 +6,8 @@ const getProfile = async (req, res, next) => {
     const { username } = req.params;
     const result = await db.query(
       `SELECT u.id, u.username, u.full_name, u.avatar_url, u.cover_url, u.bio, u.is_verified, u.created_at,
-              (SELECT COUNT(*) FROM follows WHERE following_id = u.id) AS followers_count,
-              (SELECT COUNT(*) FROM follows WHERE follower_id = u.id) AS following_count,
+              u.followers_count,
+              u.following_count,
               ${req.user ? `EXISTS(SELECT 1 FROM follows WHERE follower_id = $2 AND following_id = u.id)` : 'FALSE'} AS is_following,
               ${req.user ? `EXISTS(SELECT 1 FROM user_blocks WHERE blocker_id = $2 AND blocked_id = u.id)` : 'FALSE'} AS is_blocked,
               ${req.user ? `EXISTS(SELECT 1 FROM user_blocks WHERE blocker_id = u.id AND blocked_id = $2)` : 'FALSE'} AS has_blocked_me,
@@ -66,7 +66,7 @@ const getSuggestedUsers = async (req, res, next) => {
   try {
     const result = await db.query(
       `SELECT u.id, u.username, u.full_name, u.avatar_url, u.is_verified,
-              (SELECT COUNT(*) FROM follows WHERE following_id = u.id) AS followers_count
+              u.followers_count
        FROM users u
        WHERE u.id != $1
          AND u.id NOT IN (SELECT following_id FROM follows WHERE follower_id = $1)
@@ -91,9 +91,9 @@ const getUserPosts = async (req, res, next) => {
     const result = await db.query(
       `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at, p.repost_id,
               u.id AS user_id, u.username, u.full_name, u.avatar_url, u.is_verified,
-              (SELECT COUNT(*) FROM likes WHERE post_id = COALESCE(p.repost_id, p.id)) AS likes_count,
-              (SELECT COUNT(*) FROM comments WHERE post_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS comments_count,
-              (SELECT COUNT(*) FROM posts WHERE repost_id = COALESCE(p.repost_id, p.id) AND deleted_at IS NULL) AS reposts_count,
+              COALESCE(op.likes_count, p.likes_count) AS likes_count,
+              COALESCE(op.comments_count, p.comments_count) AS comments_count,
+              COALESCE(op.reposts_count, p.reposts_count) AS reposts_count,
               op.id AS orig_id, op.content AS orig_content, op.media_urls AS orig_media_urls,
               op.created_at AS orig_created_at,
               ou.id AS orig_user_id, ou.username AS orig_username, ou.full_name AS orig_full_name,

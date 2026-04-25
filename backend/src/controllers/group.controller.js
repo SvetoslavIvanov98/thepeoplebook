@@ -77,7 +77,7 @@ const getGroup = async (req, res, next) => {
     if (userId) {
       query = `
         SELECT g.*, u.username AS owner_username, u.avatar_url AS owner_avatar,
-               (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) AS members_count,
+               g.members_count,
                EXISTS(SELECT 1 FROM group_members WHERE group_id = g.id AND user_id = $2) AS is_member,
                (SELECT role FROM group_members WHERE group_id = g.id AND user_id = $2) AS my_role,
                EXISTS(SELECT 1 FROM group_join_requests WHERE group_id = g.id AND user_id = $2 AND status = 'pending') AS join_requested
@@ -87,7 +87,7 @@ const getGroup = async (req, res, next) => {
     } else {
       query = `
         SELECT g.*, u.username AS owner_username, u.avatar_url AS owner_avatar,
-               (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) AS members_count,
+               g.members_count,
                FALSE AS is_member, NULL AS my_role, FALSE AS join_requested
         FROM groups g JOIN users u ON u.id = g.owner_id
         WHERE g.id = $1`;
@@ -124,7 +124,7 @@ const listGroups = async (req, res, next) => {
     const publicResult = await db.query(
       `SELECT g.id, g.name, g.description, g.cover_url, g.privacy, g.created_at,
               u.username AS owner_username,
-              (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) AS members_count,
+              g.members_count,
               ${memberExpr} AS is_member
        FROM groups g JOIN users u ON u.id = g.owner_id
        WHERE g.privacy = 'public' ${whereExtra}
@@ -138,7 +138,7 @@ const listGroups = async (req, res, next) => {
       const myResult = await db.query(
         `SELECT g.id, g.name, g.description, g.cover_url, g.privacy, g.created_at,
                 u.username AS owner_username,
-                (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) AS members_count,
+                g.members_count,
                 TRUE AS is_member, gm.role AS my_role
          FROM group_members gm
          JOIN groups g ON g.id = gm.group_id
@@ -273,8 +273,8 @@ const getGroupPosts = async (req, res, next) => {
     const offset = parseInt(req.query.offset) || 0;
     const result = await db.query(
       `SELECT p.*, u.username, u.full_name, u.avatar_url, u.is_verified,
-              (SELECT COUNT(*) FROM likes WHERE post_id = p.id) AS likes_count,
-              (SELECT COUNT(*) FROM comments WHERE post_id = p.id AND deleted_at IS NULL) AS comments_count,
+              p.likes_count,
+              p.comments_count,
               ${userId ? `EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = $4)` : 'FALSE'} AS liked_by_me
        FROM posts p JOIN users u ON u.id = p.user_id
        WHERE p.group_id = $1 AND p.deleted_at IS NULL

@@ -260,3 +260,179 @@ CREATE TABLE IF NOT EXISTS moderation_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_moderation_decisions_user ON moderation_decisions (target_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_moderation_decisions_report ON moderation_decisions (report_id) WHERE report_id IS NOT NULL;
+
+-- ─── Counter Columns (Optimization) ──────────────────────────────────────────
+
+-- Users
+ALTER TABLE users ADD COLUMN IF NOT EXISTS followers_count INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS following_count INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS post_count INT NOT NULL DEFAULT 0;
+
+-- Groups
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS members_count INT NOT NULL DEFAULT 0;
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS post_count INT NOT NULL DEFAULT 0;
+
+-- Posts
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS likes_count INT NOT NULL DEFAULT 0;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS comments_count INT NOT NULL DEFAULT 0;
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS reposts_count INT NOT NULL DEFAULT 0;
+
+-- Comments
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS likes_count INT NOT NULL DEFAULT 0;
+
+-- ─── Backfill Current Counts ──────────────────────────────────────────────────
+
+-- Safe to run multiple times, though slightly expensive.
+UPDATE users u SET 
+  followers_count = (SELECT COUNT(*) FROM follows WHERE following_id = u.id),
+  following_count = (SELECT COUNT(*) FROM follows WHERE follower_id = u.id),
+  post_count = (SELECT COUNT(*) FROM posts WHERE user_id = u.id AND deleted_at IS NULL);
+
+UPDATE groups g SET 
+  members_count = (SELECT COUNT(*) FROM group_members WHERE group_id = g.id),
+  post_count = (SELECT COUNT(*) FROM posts WHERE group_id = g.id AND deleted_at IS NULL);
+
+UPDATE posts p SET 
+  likes_count = (SELECT COUNT(*) FROM likes WHERE post_id = p.id),
+  comments_count = (SELECT COUNT(*) FROM comments WHERE post_id = p.id AND deleted_at IS NULL),
+  reposts_count = (SELECT COUNT(*) FROM posts WHERE repost_id = p.id AND deleted_at IS NULL);
+
+UPDATE comments c SET 
+  likes_count = (SELECT COUNT(*) FROM likes WHERE comment_id = c.id);
+
+-- ─── Triggers to Maintain Counts ──────────────────────────────────────────────
+
+-- Follows Trigger
+CREATE OR REPLACE FUNCTION update_follow_counts() RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE users SET followers_count = followers_count + 1 WHERE id = NEW.following_id;
+    UPDATE users SET following_count = following_count + 1 WHERE id = NEW.follower_id;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    UPDATE users SET followers_count = followers_count - 1 WHERE id = OLD.following_id;
+    UPDATE users SET following_count = following_count - 1 WHERE id = OLD.follower_id;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_follow_counts ON follows;
+CREATE TRIGGER trigger_update_follow_counts
+AFTER INSERT OR DELETE ON follows
+FOR EACH ROW EXECUTE FUNCTION update_follow_counts();
+
+-- Likes Trigger
+CREATE OR REPLACE FUNCTION update_like_counts() RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.post_id IS NOT NULL THEN
+      UPDATE posts SET likes_count = likes_count + 1 WHERE id = NEW.post_id;
+    END IF;
+    IF NEW.comment_id IS NOT NULL THEN
+      UPDATE comments SET likes_count = likes_count + 1 WHERE id = NEW.comment_id;
+    END IF;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    IF OLD.post_id IS NOT NULL THEN
+      UPDATE posts SET likes_count = likes_count - 1 WHERE id = OLD.post_id;
+    END IF;
+    IF OLD.comment_id IS NOT NULL THEN
+      UPDATE comments SET likes_count = likes_count - 1 WHERE id = OLD.comment_id;
+    END IF;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_like_counts ON likes;
+CREATE TRIGGER trigger_update_like_counts
+AFTER INSERT OR DELETE ON likes
+FOR EACH ROW EXECUTE FUNCTION update_like_counts();
+
+-- Comments Trigger (Soft Delete means UPDATE)
+CREATE OR REPLACE FUNCTION update_comment_counts() RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE posts SET comments_count = comments_count + 1 WHERE id = NEW.post_id;
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    IF NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL THEN
+      UPDATE posts SET comments_count = comments_count - 1 WHERE id = NEW.post_id;
+    END IF;
+    IF NEW.deleted_at IS NULL AND OLD.deleted_at IS NOT NULL THEN
+      UPDATE posts SET comments_count = comments_count + 1 WHERE id = NEW.post_id;
+    END IF;
+    RETURN NEW;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_comment_counts ON comments;
+CREATE TRIGGER trigger_update_comment_counts
+AFTER INSERT OR UPDATE OF deleted_at ON comments
+FOR EACH ROW EXECUTE FUNCTION update_comment_counts();
+
+-- Posts Trigger (Reposts & User Post Count & Group Post Count)
+CREATE OR REPLACE FUNCTION update_post_counts() RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE users SET post_count = post_count + 1 WHERE id = NEW.user_id;
+    IF NEW.repost_id IS NOT NULL THEN
+      UPDATE posts SET reposts_count = reposts_count + 1 WHERE id = NEW.repost_id;
+    END IF;
+    IF NEW.group_id IS NOT NULL THEN
+      UPDATE groups SET post_count = post_count + 1 WHERE id = NEW.group_id;
+    END IF;
+    RETURN NEW;
+  ELSIF TG_OP = 'UPDATE' THEN
+    IF NEW.deleted_at IS NOT NULL AND OLD.deleted_at IS NULL THEN
+      UPDATE users SET post_count = post_count - 1 WHERE id = NEW.user_id;
+      IF NEW.repost_id IS NOT NULL THEN
+        UPDATE posts SET reposts_count = reposts_count - 1 WHERE id = NEW.repost_id;
+      END IF;
+      IF NEW.group_id IS NOT NULL THEN
+        UPDATE groups SET post_count = post_count - 1 WHERE id = NEW.group_id;
+      END IF;
+    END IF;
+    IF NEW.deleted_at IS NULL AND OLD.deleted_at IS NOT NULL THEN
+      UPDATE users SET post_count = post_count + 1 WHERE id = NEW.user_id;
+      IF NEW.repost_id IS NOT NULL THEN
+        UPDATE posts SET reposts_count = reposts_count + 1 WHERE id = NEW.repost_id;
+      END IF;
+      IF NEW.group_id IS NOT NULL THEN
+        UPDATE groups SET post_count = post_count + 1 WHERE id = NEW.group_id;
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_post_counts ON posts;
+CREATE TRIGGER trigger_update_post_counts
+AFTER INSERT OR UPDATE OF deleted_at ON posts
+FOR EACH ROW EXECUTE FUNCTION update_post_counts();
+
+-- Group Members Trigger
+CREATE OR REPLACE FUNCTION update_group_member_counts() RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE groups SET members_count = members_count + 1 WHERE id = NEW.group_id;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    UPDATE groups SET members_count = members_count - 1 WHERE id = OLD.group_id;
+    RETURN OLD;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_group_member_counts ON group_members;
+CREATE TRIGGER trigger_update_group_member_counts
+AFTER INSERT OR DELETE ON group_members
+FOR EACH ROW EXECUTE FUNCTION update_group_member_counts();
