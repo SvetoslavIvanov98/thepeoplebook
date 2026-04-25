@@ -51,12 +51,12 @@ function PostContent({ content, media, onMediaClick }) {
             ) : (
               <div
                 key={i}
-                className="overflow-hidden rounded-2xl shadow-sm bg-gray-100 dark:bg-gray-800"
+                className="overflow-hidden rounded-2xl shadow-sm bg-gray-100 dark:bg-gray-800 max-h-80"
               >
                 <img
                   src={url}
                   alt=""
-                  className="w-full object-cover h-full max-h-80 cursor-pointer hover:scale-[1.02] transition-transform duration-500"
+                  className="w-full cursor-pointer hover:scale-[1.02] transition-transform duration-500"
                   onClick={() => onMediaClick(i)}
                 />
               </div>
@@ -120,13 +120,15 @@ export default function PostCard({ post, onDelete }) {
     onError: () => toast.error('Failed to repost'),
   });
 
-  const { mutate: deletePost } = useMutation({
+  const { mutate: deletePost, isPending: isDeleting } = useMutation({
     mutationFn: () => api.delete(`/posts/${post.id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['feed'] });
       qc.invalidateQueries({ queryKey: ['user-posts'] });
+      toast.success('Post deleted');
       if (onDelete) onDelete(post.id);
     },
+    onError: (err) => toast.error(err?.response?.data?.error || 'Failed to delete post'),
   });
 
   // Original post was deleted but repost record exists
@@ -148,7 +150,8 @@ export default function PostCard({ post, onDelete }) {
   }
 
   return (
-    <motion.article
+    <>
+      <motion.article
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
@@ -203,9 +206,10 @@ export default function PostCard({ post, onDelete }) {
               {user?.id === post.user_id ? (
                 <button
                   onClick={() => deletePost()}
-                  className="text-xs text-red-400 hover:text-white hover:bg-red-500 px-3 py-1 rounded-full transition-all font-medium"
+                  disabled={isDeleting}
+                  className="text-xs text-red-400 hover:text-white hover:bg-red-500 disabled:opacity-50 px-3 py-1 rounded-full transition-all font-medium"
                 >
-                  {isRepost ? 'Remove repost' : 'Delete'}
+                  {isDeleting ? 'Deleting…' : isRepost ? 'Remove repost' : 'Delete'}
                 </button>
               ) : (
                 <span className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
@@ -220,17 +224,6 @@ export default function PostCard({ post, onDelete }) {
             media={displayMedia}
             onMediaClick={setLightboxIndex}
           />
-
-          <AnimatePresence>
-            {lightboxIndex !== null && (
-              <MediaLightbox
-                items={displayMedia}
-                index={lightboxIndex}
-                onClose={() => setLightboxIndex(null)}
-                onNav={setLightboxIndex}
-              />
-            )}
-          </AnimatePresence>
 
           <div className="flex items-center gap-8 mt-4 text-gray-500 dark:text-gray-400 font-medium">
             <motion.button
@@ -274,5 +267,17 @@ export default function PostCard({ post, onDelete }) {
         </div>
       </div>
     </motion.article>
+
+    <AnimatePresence>
+      {lightboxIndex !== null && (
+        <MediaLightbox
+          items={displayMedia}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onNav={setLightboxIndex}
+        />
+      )}
+    </AnimatePresence>
+    </>
   );
 }

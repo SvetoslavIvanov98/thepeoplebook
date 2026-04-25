@@ -104,6 +104,16 @@ export default function PostComposer({ groupId = null }) {
             )}
           </AnimatePresence>
 
+          {/* File input always in DOM so onChange fires even when toolbar is hidden */}
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            accept="image/*,video/*"
+            className="hidden"
+            onChange={(e) => setFiles(Array.from(e.target.files).slice(0, 4))}
+          />
+
           <AnimatePresence>
             {(isFocused || content.length > 0 || files.length > 0) && (
               <motion.div
@@ -119,14 +129,6 @@ export default function PostComposer({ groupId = null }) {
                 >
                   <span className="text-lg">📷</span> Photo/Video
                 </button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  multiple
-                  accept="image/*,video/*"
-                  className="hidden"
-                  onChange={(e) => setFiles(Array.from(e.target.files).slice(0, 4))}
-                />
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
