@@ -1,7 +1,18 @@
 module.exports = {
-  testEnvironment: 'node',
-  testMatch: ['**/*.test.js'],
   clearMocks: true,
   restoreMocks: true,
-  setupFiles: ['<rootDir>/src/tests/setup.js'],
+  projects: [
+    {
+      displayName: 'unit',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/src/tests/unit/**/*.test.js'],
+      setupFiles: ['<rootDir>/src/tests/setup.js'],
+    },
+    {
+      displayName: 'integration',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/src/tests/integration/**/*.test.js'],
+      setupFiles: ['<rootDir>/src/tests/setup.js'],
+    },
+  ],
 };
