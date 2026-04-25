@@ -4,10 +4,56 @@
 
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 font-sans antialiased;
+    @apply bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 font-sans antialiased selection:bg-brand-500 selection:text-white transition-colors duration-300 min-h-screen;
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-extrabold tracking-tight;
+  body::before,
+  body::after {
+    content: '';
+    @apply fixed -z-[1] pointer-events-none rounded-full blur-[120px] mix-blend-multiply dark:mix-blend-lighten opacity-60 dark:opacity-20;
+    animation: blob-float 20s infinite ease-in-out alternate;
+  }
+
+  body::before {
+    @apply w-[60vw] h-[60vw] max-w-[800px] max-h-[800px] bg-brand-300 dark:bg-brand-700 top-[-10%] left-[-10%];
+  }
+
+  body::after {
+    @apply w-[50vw] h-[50vw] max-w-[600px] max-h-[600px] bg-sky-300 dark:bg-sky-700 bottom-[-10%] right-[-10%];
+    animation-delay: -10s;
+    animation-duration: 25s;
+    animation-direction: alternate-reverse;
+  }
+
+  @keyframes blob-float {
+    0% {
+      transform: translate(0, 0) scale(1) rotate(0deg);
+    }
+    50% {
+      transform: translate(10%, 15%) scale(1.1) rotate(5deg);
+    }
+    100% {
+      transform: translate(-5%, -10%) scale(0.9) rotate(-5deg);
+    }
+  }
+
+  /* Refined headings with tighter tracking for a premium look */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-bold tracking-tight text-gray-900 dark:text-white;
+  }
+}
+
+/* Glassmorphism utilities */
+@layer utilities {
+  .glass {
+    @apply bg-white/70 dark:bg-gray-950/70 backdrop-blur-xl border border-gray-200/50 dark:border-gray-800/50;
+  }
+  .glass-panel {
+    @apply bg-white/40 dark:bg-gray-900/40 backdrop-blur-md border border-gray-200/30 dark:border-gray-800/30 shadow-soft;
   }
 }

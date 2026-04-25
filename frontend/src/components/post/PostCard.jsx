@@ -7,44 +7,59 @@ import { useAuthStore } from '../../store/auth.store';
 import MediaLightbox from '../MediaLightbox';
 import ReportButton from '../ReportButton';
 import toast from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 function PostContent({ content, media, onMediaClick }) {
   return (
     <>
-      {content && (
-        <p className="mt-1 text-sm whitespace-pre-wrap break-words">
-          {content.split(/(#\w+)/g).map((part, i) =>
+      <p className="mt-2 text-base text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words leading-relaxed">
+        {content &&
+          content.split(/(#\w+)/g).map((part, i) =>
             /^#\w+$/.test(part) ? (
               <Link
                 key={i}
                 to={`/hashtag/${part.slice(1).toLowerCase()}`}
-                className="text-brand-500 hover:underline"
+                className="text-brand-600 dark:text-brand-400 hover:underline font-medium"
                 onClick={(e) => e.stopPropagation()}
               >
                 {part}
               </Link>
-            ) : part
+            ) : (
+              part
+            )
           )}
-        </p>
-      )}
-      {media.length > 0 && (
-        <div className={`mt-2 grid gap-1 ${media.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      </p>
+      {media && media.length > 0 && (
+        <div className={`mt-4 grid gap-2 ${media.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
           {media.map((url, i) =>
             url.match(/\.(mp4|mov|avi)/i) ? (
-              <div key={i} className="relative cursor-pointer group rounded-xl overflow-hidden" onClick={() => onMediaClick(i)}>
-                <video src={url} className="w-full object-cover max-h-72 pointer-events-none" />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/50 transition-colors">
-                  <span className="text-white text-5xl leading-none">▶</span>
+              <div
+                key={i}
+                className="relative cursor-pointer group rounded-2xl overflow-hidden shadow-sm"
+                onClick={() => onMediaClick(i)}
+              >
+                <video
+                  src={url}
+                  className="w-full object-cover max-h-80 pointer-events-none group-hover:scale-[1.02] transition-transform duration-500"
+                />
+                <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
+                  <div className="bg-white/20 backdrop-blur-md rounded-full w-14 h-14 flex items-center justify-center border border-white/30">
+                    <span className="text-white text-2xl ml-1 leading-none">▶</span>
+                  </div>
                 </div>
               </div>
             ) : (
-              <img
+              <div
                 key={i}
-                src={url}
-                alt=""
-                className="rounded-xl w-full object-cover max-h-72 cursor-pointer hover:brightness-90 transition-[filter]"
-                onClick={() => onMediaClick(i)}
-              />
+                className="overflow-hidden rounded-2xl shadow-sm bg-gray-100 dark:bg-gray-800"
+              >
+                <img
+                  src={url}
+                  alt=""
+                  className="w-full object-cover h-full max-h-80 cursor-pointer hover:scale-[1.02] transition-transform duration-500"
+                  onClick={() => onMediaClick(i)}
+                />
+              </div>
             )
           )}
         </div>
@@ -64,11 +79,27 @@ export default function PostCard({ post, onDelete }) {
 
   const displayContent = isRepost ? post.orig_content : post.content;
   const displayMedia = isRepost
-    ? (Array.isArray(post.orig_media_urls) ? post.orig_media_urls : JSON.parse(post.orig_media_urls || '[]'))
-    : (Array.isArray(post.media_urls) ? post.media_urls : JSON.parse(post.media_urls || '[]'));
+    ? Array.isArray(post.orig_media_urls)
+      ? post.orig_media_urls
+      : JSON.parse(post.orig_media_urls || '[]')
+    : Array.isArray(post.media_urls)
+      ? post.media_urls
+      : JSON.parse(post.media_urls || '[]');
   const displayUser = isRepost
-    ? { id: post.orig_user_id, username: post.orig_username, full_name: post.orig_full_name, avatar_url: post.orig_avatar_url, is_verified: post.orig_is_verified }
-    : { id: post.user_id, username: post.username, full_name: post.full_name, avatar_url: post.avatar_url, is_verified: post.is_verified };
+    ? {
+        id: post.orig_user_id,
+        username: post.orig_username,
+        full_name: post.orig_full_name,
+        avatar_url: post.orig_avatar_url,
+        is_verified: post.orig_is_verified,
+      }
+    : {
+        id: post.user_id,
+        username: post.username,
+        full_name: post.full_name,
+        avatar_url: post.avatar_url,
+        is_verified: post.is_verified,
+      };
   const displayCreatedAt = isRepost ? post.orig_created_at : post.created_at;
 
   const { mutate: toggleLike } = useMutation({
@@ -101,57 +132,87 @@ export default function PostCard({ post, onDelete }) {
   // Original post was deleted but repost record exists
   if (isRepost && !post.orig_id) {
     return (
-      <article className="p-4 border-b border-gray-200 dark:border-gray-800">
-        <p className="text-xs text-gray-400 mb-1">🔁 <Link to={`/${post.username}`} className="hover:underline">@{post.username}</Link> reposted</p>
-        <p className="text-sm text-gray-400 italic">[Original post unavailable]</p>
+      <article className="p-5 border-b border-gray-200 dark:border-gray-800">
+        <p className="text-sm text-gray-500 mb-1 flex items-center gap-2">
+          🔁{' '}
+          <Link to={`/${post.username}`} className="hover:underline font-medium">
+            @{post.username}
+          </Link>{' '}
+          reposted
+        </p>
+        <div className="bg-gray-50 dark:bg-gray-900 rounded-2xl p-4 border border-gray-100 dark:border-gray-800">
+          <p className="text-sm text-gray-400 italic">[Original post unavailable]</p>
+        </div>
       </article>
     );
   }
 
   return (
-    <article className="p-4 border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900/30 transition-colors">
+    <motion.article
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.3 }}
+      className="p-6 mb-6 bg-white/60 dark:bg-black/20 backdrop-blur-lg rounded-[2rem] border border-white/40 dark:border-white/5 shadow-soft hover:shadow-xl hover:bg-white/80 dark:hover:bg-black/30 hover:scale-[1.01] transition-all duration-300"
+    >
       {/* Repost attribution header */}
       {isRepost && (
-        <p className="text-xs text-gray-400 mb-2 flex items-center gap-1">
-          <span>🔁</span>
-          <Link to={`/${post.username}`} className="hover:underline font-medium">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-1.5 font-medium ml-12">
+          <span className="text-green-500">🔁</span>
+          <Link
+            to={`/${post.username}`}
+            className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+          >
             {post.full_name || post.username}
           </Link>
-          <span>reposted</span>
+          <span className="text-gray-400">reposted</span>
         </p>
       )}
 
-      <div className="flex gap-3">
-        <Link to={`/${displayUser.username}`} className="shrink-0">
+      <div className="flex gap-4">
+        <Link to={`/${displayUser.username}`} className="shrink-0 relative group">
           <img
-            src={displayUser.avatar_url || `https://ui-avatars.com/api/?name=${displayUser.username}`}
+            src={
+              displayUser.avatar_url || `https://ui-avatars.com/api/?name=${displayUser.username}`
+            }
             alt={displayUser.username}
-            className="w-10 h-10 rounded-full object-cover"
+            className="w-12 h-12 rounded-full object-cover shadow-sm group-hover:shadow transition-shadow"
           />
+          <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/10"></div>
         </Link>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link to={`/${displayUser.username}`} className="font-semibold hover:underline text-sm">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <Link
+              to={`/${displayUser.username}`}
+              className="font-bold text-gray-900 dark:text-gray-100 hover:text-brand-600 dark:hover:text-brand-400 transition-colors text-base truncate"
+            >
               {displayUser.full_name || displayUser.username}
             </Link>
-            {displayUser.is_verified && <span className="text-brand-500 text-xs">✓</span>}
-            <span className="text-gray-400 text-xs">@{displayUser.username}</span>
-            <span className="text-gray-400 text-xs">·</span>
-            <Link to={`/post/${targetId}`} className="text-gray-400 text-xs hover:underline">
+            {displayUser.is_verified && <span className="text-brand-500 text-sm ml-1">✓</span>}
+            <span className="text-gray-500 dark:text-gray-400 text-sm">
+              @{displayUser.username}
+            </span>
+            <span className="text-gray-400 text-sm">·</span>
+            <Link
+              to={`/post/${targetId}`}
+              className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-300 text-sm transition-colors"
+            >
               {formatDistanceToNow(new Date(displayCreatedAt), { addSuffix: true })}
             </Link>
-            {user?.id === post.user_id ? (
-              <button
-                onClick={() => deletePost()}
-                className="ml-auto text-xs text-red-400 hover:text-red-600"
-              >
-                {isRepost ? 'Remove repost' : 'Delete'}
-              </button>
-            ) : (
-              <span className="ml-auto">
-                <ReportButton postId={targetId} />
-              </span>
-            )}
+            <div className="ml-auto flex items-center">
+              {user?.id === post.user_id ? (
+                <button
+                  onClick={() => deletePost()}
+                  className="text-xs text-red-400 hover:text-white hover:bg-red-500 px-3 py-1 rounded-full transition-all font-medium"
+                >
+                  {isRepost ? 'Remove repost' : 'Delete'}
+                </button>
+              ) : (
+                <span className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                  <ReportButton postId={targetId} />
+                </span>
+              )}
+            </div>
           </div>
 
           <PostContent
@@ -160,32 +221,58 @@ export default function PostCard({ post, onDelete }) {
             onMediaClick={setLightboxIndex}
           />
 
-          <MediaLightbox
-            items={displayMedia}
-            index={lightboxIndex}
-            onClose={() => setLightboxIndex(null)}
-            onNav={setLightboxIndex}
-          />
+          <AnimatePresence>
+            {lightboxIndex !== null && (
+              <MediaLightbox
+                items={displayMedia}
+                index={lightboxIndex}
+                onClose={() => setLightboxIndex(null)}
+                onNav={setLightboxIndex}
+              />
+            )}
+          </AnimatePresence>
 
-          <div className="flex items-center gap-6 mt-3 text-gray-400 text-sm">
-            <button
+          <div className="flex items-center gap-8 mt-4 text-gray-500 dark:text-gray-400 font-medium">
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
               onClick={() => toggleLike()}
-              className={`flex items-center gap-1 hover:text-red-500 transition-colors ${post.liked_by_me ? 'text-red-500' : ''}`}
+              className={`flex items-center gap-2 transition-colors group ${post.liked_by_me ? 'text-red-500' : 'hover:text-red-500'}`}
             >
-              {post.liked_by_me ? '❤️' : '🤍'} {post.likes_count}
-            </button>
-            <Link to={`/post/${targetId}`} className="flex items-center gap-1 hover:text-brand-500">
-              💬 {post.comments_count}
+              <div
+                className={`p-2 rounded-full group-hover:bg-red-50 dark:group-hover:bg-red-500/10 transition-colors ${post.liked_by_me ? 'bg-red-50 dark:bg-red-500/10' : ''}`}
+              >
+                {post.liked_by_me ? '❤️' : '🤍'}
+              </div>
+              <span className="text-sm">{post.likes_count > 0 ? post.likes_count : ''}</span>
+            </motion.button>
+
+            <Link
+              to={`/post/${targetId}`}
+              className="flex items-center gap-2 hover:text-brand-600 dark:hover:text-brand-400 transition-colors group"
+            >
+              <div className="p-2 rounded-full group-hover:bg-brand-50 dark:group-hover:bg-brand-500/10 transition-colors">
+                💬
+              </div>
+              <span className="text-sm">{post.comments_count > 0 ? post.comments_count : ''}</span>
             </Link>
-            <button
+
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
               onClick={() => toggleRepost()}
-              className={`flex items-center gap-1 transition-colors ${post.has_reposted ? 'text-green-500 hover:text-gray-400' : 'hover:text-green-500'}`}
+              className={`flex items-center gap-2 transition-colors group ${post.has_reposted ? 'text-green-500' : 'hover:text-green-500'}`}
             >
-              🔁 {post.reposts_count || 0}
-            </button>
+              <div
+                className={`p-2 rounded-full group-hover:bg-green-50 dark:group-hover:bg-green-500/10 transition-colors ${post.has_reposted ? 'bg-green-50 dark:bg-green-500/10' : ''}`}
+              >
+                🔁
+              </div>
+              <span className="text-sm">{post.reposts_count > 0 ? post.reposts_count : ''}</span>
+            </motion.button>
           </div>
         </div>
       </div>
-    </article>
+    </motion.article>
   );
 }
