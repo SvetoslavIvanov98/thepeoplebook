@@ -3,9 +3,15 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { getSocket, joinConversation, leaveConversation, emitTyping } from '../services/socket.service';
+import {
+  getSocket,
+  joinConversation,
+  leaveConversation,
+  emitTyping,
+} from '../services/socket.service';
 import { format, isToday, isYesterday } from 'date-fns';
 import toast from 'react-hot-toast';
+import MediaLightbox from '../components/MediaLightbox';
 
 // helpers
 
@@ -21,15 +27,15 @@ function formatTime(dateStr) {
 }
 
 function bubbleRadius(isMine, isFirst, isLast) {
-  if (isFirst && isLast) return 'rounded-2xl';
+  if (isFirst && isLast) return 'rounded-[20px]';
   if (isMine) {
-    if (isFirst) return 'rounded-2xl rounded-br-[5px]';
-    if (isLast)  return 'rounded-2xl rounded-tr-[5px]';
-    return 'rounded-2xl rounded-r-[5px]';
+    if (isFirst) return 'rounded-[20px] rounded-br-[6px]';
+    if (isLast) return 'rounded-[20px] rounded-tr-[6px]';
+    return 'rounded-[20px] rounded-r-[6px]';
   } else {
-    if (isFirst) return 'rounded-2xl rounded-bl-[5px]';
-    if (isLast)  return 'rounded-2xl rounded-tl-[5px]';
-    return 'rounded-2xl rounded-l-[5px]';
+    if (isFirst) return 'rounded-[20px] rounded-bl-[6px]';
+    if (isLast) return 'rounded-[20px] rounded-tl-[6px]';
+    return 'rounded-[20px] rounded-l-[6px]';
   }
 }
 
@@ -94,7 +100,7 @@ function DateSeparator({ label }) {
   );
 }
 
-function MessageGroup({ group, isLastGroup, lastSentRead, partnerAvatar, myId }) {
+function MessageGroup({ group, isLastGroup, lastSentRead, partnerAvatar, myId, onMediaClick }) {
   const { isMine, messages, username, avatar_url } = group;
   const count = messages.length;
 
@@ -110,25 +116,47 @@ function MessageGroup({ group, isLastGroup, lastSentRead, partnerAvatar, myId })
             />
           </div>
         )}
-        <div className={`flex flex-col gap-[3px] ${isMine ? 'items-end' : 'items-start'} max-w-[72vw] md:max-w-xs`}>
+        <div
+          className={`flex flex-col gap-[3px] ${isMine ? 'items-end' : 'items-start'} max-w-[72vw] md:max-w-xs`}
+        >
           {messages.map((m, i) => {
             const isFirst = i === 0;
-            const isLast  = i === count - 1;
+            const isLast = i === count - 1;
             return (
               <div key={m.id} className="group/bubble relative">
                 <div
-                  className={`px-3 py-2 text-sm leading-relaxed break-words select-text ${bubbleRadius(isMine, isFirst, isLast)} ${
+                  className={`px-4 py-2.5 text-[15px] leading-relaxed break-words select-text transition-all ${bubbleRadius(isMine, isFirst, isLast)} ${
                     isMine
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
+                      ? 'bg-gradient-to-br from-brand-500 to-indigo-600 text-white shadow-md shadow-brand-500/20'
+                      : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-sm border border-gray-100 dark:border-gray-700/60'
                   }`}
                 >
                   {m.content && <span>{m.content}</span>}
-                  {m.media_url && (
-                    <img src={m.media_url} alt="" className="mt-1 rounded-xl max-w-full max-h-60 object-cover" />
-                  )}
+                  {m.media_url &&
+                    (/\.(mp4|mov|avi|webm|mkv|ogg|wmv|flv)/i.test(m.media_url) ? (
+                      <div
+                        className="relative mt-1 rounded-xl overflow-hidden cursor-pointer group/vid"
+                        onClick={() => onMediaClick(m.media_url)}
+                      >
+                        <video src={m.media_url} className="max-w-full max-h-60 object-cover" />
+                        <div className="absolute inset-0 bg-black/20 group-hover/vid:bg-black/40 flex items-center justify-center transition-colors">
+                          <div className="bg-white/20 backdrop-blur-md rounded-full w-10 h-10 flex items-center justify-center border border-white/30">
+                            <span className="text-white text-lg ml-0.5 leading-none">▶</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <img
+                        src={m.media_url}
+                        alt=""
+                        className="mt-1 rounded-xl max-w-full max-h-60 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => onMediaClick(m.media_url)}
+                      />
+                    ))}
                 </div>
-                <span className={`absolute top-1/2 -translate-y-1/2 pointer-events-none opacity-0 group-hover/bubble:opacity-100 transition-opacity text-[10px] text-gray-400 whitespace-nowrap ${isMine ? 'right-full mr-2' : 'left-full ml-2'}`}>
+                <span
+                  className={`absolute top-1/2 -translate-y-1/2 pointer-events-none opacity-0 group-hover/bubble:opacity-100 transition-opacity text-[10px] text-gray-400 whitespace-nowrap ${isMine ? 'right-full mr-2' : 'left-full ml-2'}`}
+                >
                   {formatTime(m.created_at)}
                 </span>
               </div>
@@ -151,7 +179,16 @@ function MessageGroup({ group, isLastGroup, lastSentRead, partnerAvatar, myId })
 
 function IconAttach() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="w-5 h-5"
+    >
       <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
     </svg>
   );
@@ -159,15 +196,29 @@ function IconAttach() {
 
 function IconClose() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="w-3.5 h-3.5">
-      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      className="w-3.5 h-3.5"
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   );
 }
 
 function IconSend() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className="w-7 h-7"
+    >
       <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
     </svg>
   );
@@ -175,8 +226,19 @@ function IconSend() {
 
 function IconChat() {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.2} stroke="currentColor" className="w-14 h-14 opacity-30">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.2}
+      stroke="currentColor"
+      className="w-14 h-14 opacity-30"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z"
+      />
     </svg>
   );
 }
@@ -197,6 +259,7 @@ export default function MessagesPage() {
   const typingCooldownRef = useRef(null);
   const fileInputRef = useRef();
   const [selectedFile, setSelectedFile] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const qc = useQueryClient();
 
   const { data: conversations } = useQuery({
@@ -221,7 +284,7 @@ export default function MessagesPage() {
     const s = getSocket();
 
     const onMessage = (msg) => {
-      setMessages((m) => m.some((x) => x.id === msg.id) ? m : [...m, msg]);
+      setMessages((m) => (m.some((x) => x.id === msg.id) ? m : [...m, msg]));
       qc.invalidateQueries({ queryKey: ['conversations'] });
     };
 
@@ -234,9 +297,7 @@ export default function MessagesPage() {
 
     const onRead = ({ conversationId: cid }) => {
       if (cid != conversationId) return;
-      setMessages((prev) =>
-        prev.map((m) => (m.sender_id === user?.id ? { ...m, read: true } : m))
-      );
+      setMessages((prev) => prev.map((m) => (m.sender_id === user?.id ? { ...m, read: true } : m)));
     };
 
     s?.on('new_message', onMessage);
@@ -256,13 +317,18 @@ export default function MessagesPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, partnerTyping]);
 
-  const handleTextChange = useCallback((e) => {
-    setText(e.target.value);
-    if (!conversationId) return;
-    if (typingCooldownRef.current) return;
-    emitTyping(conversationId);
-    typingCooldownRef.current = setTimeout(() => { typingCooldownRef.current = null; }, 2000);
-  }, [conversationId]);
+  const handleTextChange = useCallback(
+    (e) => {
+      setText(e.target.value);
+      if (!conversationId) return;
+      if (typingCooldownRef.current) return;
+      emitTyping(conversationId);
+      typingCooldownRef.current = setTimeout(() => {
+        typingCooldownRef.current = null;
+      }, 2000);
+    },
+    [conversationId]
+  );
 
   const { mutate: send, isPending: sending } = useMutation({
     mutationFn: () => {
@@ -275,7 +341,7 @@ export default function MessagesPage() {
       return api.post(`/messages/${conversationId}`, { content: text.trim() });
     },
     onSuccess: ({ data }) => {
-      setMessages((m) => m.some((x) => x.id === data.id) ? m : [...m, data]);
+      setMessages((m) => (m.some((x) => x.id === data.id) ? m : [...m, data]));
       setText('');
       setSelectedFile(null);
       qc.invalidateQueries({ queryKey: ['conversations'] });
@@ -286,20 +352,28 @@ export default function MessagesPage() {
   const canSend = (text.trim() || selectedFile) && !sending;
 
   const partner = conversations?.find((c) => c.id == conversationId);
-  const partnerAvatar = partner?.partner_avatar ||
+  const partnerAvatar =
+    partner?.partner_avatar ||
     `https://ui-avatars.com/api/?name=${partner?.partner_username || 'U'}&size=48`;
 
   const renderItems = buildRenderList(messages, user?.id);
   const groups = renderItems.filter((x) => x.type === 'group');
   const lastMyGroup = [...groups].reverse().find((g) => g.isMine);
-  const lastSentRead = lastMyGroup
-    ? lastMyGroup.messages.some((m) => m.read)
-    : false;
+  const lastSentRead = lastMyGroup ? lastMyGroup.messages.some((m) => m.read) : false;
+
+  const chatMedia = messages.filter((m) => m.media_url).map((m) => m.media_url);
+
+  const handleMediaClick = (url) => {
+    const idx = chatMedia.indexOf(url);
+    if (idx !== -1) setLightboxIndex(idx);
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Conversations sidebar */}
-      <div className={`w-full md:w-72 border-r border-gray-200 dark:border-gray-800 flex flex-col flex-shrink-0 ${conversationId ? 'hidden md:flex' : 'flex'}`}>
+      <div
+        className={`w-full md:w-72 border-r border-gray-200 dark:border-gray-800 flex flex-col flex-shrink-0 ${conversationId ? 'hidden md:flex' : 'flex'}`}
+      >
         <header className="sticky top-0 bg-white/80 dark:bg-gray-950/80 backdrop-blur border-b border-gray-200 dark:border-gray-800 px-4 py-3">
           <div className="flex items-center justify-between">
             <h1 className="font-bold text-lg">Messages</h1>
@@ -327,8 +401,12 @@ export default function MessagesPage() {
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm truncate">{c.partner_name || c.partner_username}</p>
-                <p className="text-xs text-gray-500 truncate">{c.last_message || 'No messages yet'}</p>
+                <p className="font-semibold text-sm truncate">
+                  {c.partner_name || c.partner_username}
+                </p>
+                <p className="text-xs text-gray-500 truncate">
+                  {c.last_message || 'No messages yet'}
+                </p>
               </div>
               {c.unread_count > 0 && (
                 <span className="bg-brand-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
@@ -356,7 +434,10 @@ export default function MessagesPage() {
             {partner && (
               <>
                 <img src={partnerAvatar} alt="" className="w-9 h-9 rounded-full object-cover" />
-                <Link to={`/${partner.partner_username}`} className="font-bold text-sm hover:underline">
+                <Link
+                  to={`/${partner.partner_username}`}
+                  className="font-bold text-sm hover:underline"
+                >
                   {partner.partner_name || partner.partner_username}
                 </Link>
               </>
@@ -375,6 +456,7 @@ export default function MessagesPage() {
                   lastSentRead={lastSentRead}
                   partnerAvatar={partnerAvatar}
                   myId={user?.id}
+                  onMediaClick={handleMediaClick}
                 />
               )
             )}
@@ -402,8 +484,13 @@ export default function MessagesPage() {
             <div className="flex-1 flex flex-col gap-1">
               {selectedFile && (
                 <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-xl px-3 py-1.5 text-xs">
-                  <span className="truncate max-w-[12rem] text-gray-700 dark:text-gray-300">{selectedFile.name}</span>
-                  <button onClick={() => setSelectedFile(null)} className="text-gray-400 hover:text-red-400 ml-auto">
+                  <span className="truncate max-w-[12rem] text-gray-700 dark:text-gray-300">
+                    {selectedFile.name}
+                  </span>
+                  <button
+                    onClick={() => setSelectedFile(null)}
+                    className="text-gray-400 hover:text-red-400 ml-auto"
+                  >
                     <IconClose />
                   </button>
                 </div>
@@ -437,7 +524,10 @@ export default function MessagesPage() {
         <div className="flex-1 hidden md:flex flex-col items-center justify-center text-gray-400 gap-3">
           <IconChat />
           <p className="text-sm">Select a conversation to start chatting</p>
-          <button onClick={() => setComposeOpen(true)} className="text-sm text-brand-600 hover:underline font-semibold">
+          <button
+            onClick={() => setComposeOpen(true)}
+            className="text-sm text-brand-600 hover:underline font-semibold"
+          >
             Start a new conversation
           </button>
         </div>
@@ -445,8 +535,14 @@ export default function MessagesPage() {
 
       {/* Compose modal */}
       {composeOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setComposeOpen(false)}>
-          <div className="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+          onClick={() => setComposeOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-gray-900 rounded-2xl p-6 w-full max-w-sm space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="font-bold text-lg">New Message</h3>
             <input
               autoFocus
@@ -460,7 +556,10 @@ export default function MessagesPage() {
             />
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setComposeOpen(false); setComposeUsername(''); }}
+                onClick={() => {
+                  setComposeOpen(false);
+                  setComposeUsername('');
+                }}
                 className="border border-gray-300 dark:border-gray-700 rounded-full px-4 py-1.5 text-sm font-semibold hover:bg-gray-100 dark:hover:bg-gray-800"
               >
                 Cancel
@@ -487,6 +586,14 @@ export default function MessagesPage() {
           </div>
         </div>
       )}
+
+      {/* Media Lightbox */}
+      <MediaLightbox
+        items={chatMedia}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onNav={setLightboxIndex}
+      />
     </div>
   );
 }

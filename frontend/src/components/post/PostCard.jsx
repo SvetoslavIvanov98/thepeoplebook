@@ -4,7 +4,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
-import MediaLightbox from '../MediaLightbox';
+import PostLightbox from './PostLightbox';
 import ReportButton from '../ReportButton';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -32,7 +32,7 @@ function PostContent({ content, media, onMediaClick }) {
       {media && media.length > 0 && (
         <div className={`mt-4 grid gap-2 ${media.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
           {media.map((url, i) =>
-            url.match(/\.(mp4|mov|avi)/i) ? (
+            url.match(/\.(mp4|mov|avi|webm|mkv|ogg|wmv|flv)/i) ? (
               <div
                 key={i}
                 className="relative cursor-pointer group rounded-2xl overflow-hidden shadow-sm"
@@ -152,132 +152,137 @@ export default function PostCard({ post, onDelete }) {
   return (
     <>
       <motion.article
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ duration: 0.3 }}
-      className="p-6 mb-6 bg-white/60 dark:bg-black/20 backdrop-blur-lg rounded-[2rem] border border-white/40 dark:border-white/5 shadow-soft hover:shadow-xl hover:bg-white/80 dark:hover:bg-black/30 hover:scale-[1.01] transition-all duration-300"
-    >
-      {/* Repost attribution header */}
-      {isRepost && (
-        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-1.5 font-medium ml-12">
-          <span className="text-green-500">🔁</span>
-          <Link
-            to={`/${post.username}`}
-            className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
-          >
-            {post.full_name || post.username}
-          </Link>
-          <span className="text-gray-400">reposted</span>
-        </p>
-      )}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.3 }}
+        className="p-6 mb-6 bg-white/60 dark:bg-black/20 backdrop-blur-lg rounded-[2rem] border border-white/40 dark:border-white/5 shadow-soft hover:shadow-xl hover:bg-white/80 dark:hover:bg-black/30 hover:scale-[1.01] transition-all duration-300"
+      >
+        {/* Repost attribution header */}
+        {isRepost && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-1.5 font-medium ml-12">
+            <span className="text-green-500">🔁</span>
+            <Link
+              to={`/${post.username}`}
+              className="hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+            >
+              {post.full_name || post.username}
+            </Link>
+            <span className="text-gray-400">reposted</span>
+          </p>
+        )}
 
-      <div className="flex gap-4">
-        <Link to={`/${displayUser.username}`} className="shrink-0 relative group">
-          <img
-            src={
-              displayUser.avatar_url || `https://ui-avatars.com/api/?name=${displayUser.username}`
-            }
-            alt={displayUser.username}
-            className="w-12 h-12 rounded-full object-cover shadow-sm group-hover:shadow transition-shadow"
-          />
-          <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/10"></div>
-        </Link>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-1">
-            <Link
-              to={`/${displayUser.username}`}
-              className="font-bold text-gray-900 dark:text-gray-100 hover:text-brand-600 dark:hover:text-brand-400 transition-colors text-base truncate"
-            >
-              {displayUser.full_name || displayUser.username}
-            </Link>
-            {displayUser.is_verified && <span className="text-brand-500 text-sm ml-1">✓</span>}
-            <span className="text-gray-500 dark:text-gray-400 text-sm">
-              @{displayUser.username}
-            </span>
-            <span className="text-gray-400 text-sm">·</span>
-            <Link
-              to={`/post/${targetId}`}
-              className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-300 text-sm transition-colors"
-            >
-              {formatDistanceToNow(new Date(displayCreatedAt), { addSuffix: true })}
-            </Link>
-            <div className="ml-auto flex items-center">
-              {user?.id === post.user_id ? (
-                <button
-                  onClick={() => deletePost()}
-                  disabled={isDeleting}
-                  className="text-xs text-red-400 hover:text-white hover:bg-red-500 disabled:opacity-50 px-3 py-1 rounded-full transition-all font-medium"
+        <div className="flex gap-4">
+          <Link to={`/${displayUser.username}`} className="shrink-0 relative group">
+            <img
+              src={
+                displayUser.avatar_url || `https://ui-avatars.com/api/?name=${displayUser.username}`
+              }
+              alt={displayUser.username}
+              className="w-12 h-12 rounded-full object-cover shadow-sm group-hover:shadow transition-shadow"
+            />
+            <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/10"></div>
+          </Link>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <Link
+                to={`/${displayUser.username}`}
+                className="font-bold text-gray-900 dark:text-gray-100 hover:text-brand-600 dark:hover:text-brand-400 transition-colors text-base truncate"
+              >
+                {displayUser.full_name || displayUser.username}
+              </Link>
+              {displayUser.is_verified && <span className="text-brand-500 text-sm ml-1">✓</span>}
+              <span className="text-gray-500 dark:text-gray-400 text-sm">
+                @{displayUser.username}
+              </span>
+              <span className="text-gray-400 text-sm">·</span>
+              <Link
+                to={`/post/${targetId}`}
+                className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-300 text-sm transition-colors"
+              >
+                {formatDistanceToNow(new Date(displayCreatedAt), { addSuffix: true })}
+              </Link>
+              <div className="ml-auto flex items-center">
+                {user?.id === post.user_id ? (
+                  <button
+                    onClick={() => deletePost()}
+                    disabled={isDeleting}
+                    className="text-xs text-red-400 hover:text-white hover:bg-red-500 disabled:opacity-50 px-3 py-1 rounded-full transition-all font-medium"
+                  >
+                    {isDeleting ? 'Deleting…' : isRepost ? 'Remove repost' : 'Delete'}
+                  </button>
+                ) : (
+                  <span className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                    <ReportButton postId={targetId} />
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <PostContent
+              content={displayContent}
+              media={displayMedia}
+              onMediaClick={setLightboxIndex}
+            />
+
+            <div className="flex items-center gap-8 mt-4 text-gray-500 dark:text-gray-400 font-medium">
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => toggleLike()}
+                className={`flex items-center gap-2 transition-colors group ${post.liked_by_me ? 'text-red-500' : 'hover:text-red-500'}`}
+              >
+                <div
+                  className={`p-2 rounded-full group-hover:bg-red-50 dark:group-hover:bg-red-500/10 transition-colors ${post.liked_by_me ? 'bg-red-50 dark:bg-red-500/10' : ''}`}
                 >
-                  {isDeleting ? 'Deleting…' : isRepost ? 'Remove repost' : 'Delete'}
-                </button>
-              ) : (
-                <span className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
-                  <ReportButton postId={targetId} />
+                  {post.liked_by_me ? '❤️' : '🤍'}
+                </div>
+                <span className="text-sm">{post.likes_count > 0 ? post.likes_count : ''}</span>
+              </motion.button>
+
+              <Link
+                to={`/post/${targetId}`}
+                className="flex items-center gap-2 hover:text-brand-600 dark:hover:text-brand-400 transition-colors group"
+              >
+                <div className="p-2 rounded-full group-hover:bg-brand-50 dark:group-hover:bg-brand-500/10 transition-colors">
+                  💬
+                </div>
+                <span className="text-sm">
+                  {post.comments_count > 0 ? post.comments_count : ''}
                 </span>
-              )}
+              </Link>
+
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => toggleRepost()}
+                className={`flex items-center gap-2 transition-colors group ${post.has_reposted ? 'text-green-500' : 'hover:text-green-500'}`}
+              >
+                <div
+                  className={`p-2 rounded-full group-hover:bg-green-50 dark:group-hover:bg-green-500/10 transition-colors ${post.has_reposted ? 'bg-green-50 dark:bg-green-500/10' : ''}`}
+                >
+                  🔁
+                </div>
+                <span className="text-sm">{post.reposts_count > 0 ? post.reposts_count : ''}</span>
+              </motion.button>
             </div>
           </div>
-
-          <PostContent
-            content={displayContent}
-            media={displayMedia}
-            onMediaClick={setLightboxIndex}
-          />
-
-          <div className="flex items-center gap-8 mt-4 text-gray-500 dark:text-gray-400 font-medium">
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => toggleLike()}
-              className={`flex items-center gap-2 transition-colors group ${post.liked_by_me ? 'text-red-500' : 'hover:text-red-500'}`}
-            >
-              <div
-                className={`p-2 rounded-full group-hover:bg-red-50 dark:group-hover:bg-red-500/10 transition-colors ${post.liked_by_me ? 'bg-red-50 dark:bg-red-500/10' : ''}`}
-              >
-                {post.liked_by_me ? '❤️' : '🤍'}
-              </div>
-              <span className="text-sm">{post.likes_count > 0 ? post.likes_count : ''}</span>
-            </motion.button>
-
-            <Link
-              to={`/post/${targetId}`}
-              className="flex items-center gap-2 hover:text-brand-600 dark:hover:text-brand-400 transition-colors group"
-            >
-              <div className="p-2 rounded-full group-hover:bg-brand-50 dark:group-hover:bg-brand-500/10 transition-colors">
-                💬
-              </div>
-              <span className="text-sm">{post.comments_count > 0 ? post.comments_count : ''}</span>
-            </Link>
-
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => toggleRepost()}
-              className={`flex items-center gap-2 transition-colors group ${post.has_reposted ? 'text-green-500' : 'hover:text-green-500'}`}
-            >
-              <div
-                className={`p-2 rounded-full group-hover:bg-green-50 dark:group-hover:bg-green-500/10 transition-colors ${post.has_reposted ? 'bg-green-50 dark:bg-green-500/10' : ''}`}
-              >
-                🔁
-              </div>
-              <span className="text-sm">{post.reposts_count > 0 ? post.reposts_count : ''}</span>
-            </motion.button>
-          </div>
         </div>
-      </div>
-    </motion.article>
+      </motion.article>
 
-    <AnimatePresence>
-      {lightboxIndex !== null && (
-        <MediaLightbox
-          items={displayMedia}
-          index={lightboxIndex}
-          onClose={() => setLightboxIndex(null)}
-          onNav={setLightboxIndex}
-        />
-      )}
-    </AnimatePresence>
+      <AnimatePresence>
+        {lightboxIndex !== null && (
+          <PostLightbox
+            post={post}
+            items={displayMedia}
+            index={lightboxIndex}
+            onClose={() => setLightboxIndex(null)}
+            onNav={setLightboxIndex}
+            toggleLike={toggleLike}
+            toggleRepost={toggleRepost}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

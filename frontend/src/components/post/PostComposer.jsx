@@ -4,6 +4,7 @@ import api from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Image } from 'lucide-react';
 
 export default function PostComposer({ groupId = null }) {
   const [content, setContent] = useState('');
@@ -28,7 +29,7 @@ export default function PostComposer({ groupId = null }) {
       if (groupId) qc.invalidateQueries({ queryKey: ['group-posts', groupId] });
       toast.success('Posted!');
     },
-    onError: () => toast.error('Failed to post'),
+    onError: (err) => toast.error(err?.response?.data?.error || 'Failed to post'),
   });
 
   const handleSubmit = (e) => {
@@ -127,7 +128,7 @@ export default function PostComposer({ groupId = null }) {
                   onClick={() => fileRef.current.click()}
                   className="flex items-center gap-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-900/30 px-3 py-1.5 rounded-xl text-sm font-semibold transition-colors"
                 >
-                  <span className="text-lg">📷</span> Photo/Video
+                  <Image className="w-5 h-5" /> Photo/Video
                 </button>
                 <motion.button
                   whileHover={{ scale: 1.05 }}

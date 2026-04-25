@@ -21,7 +21,7 @@ const toWebp = (buf, mimetype) => {
 const storage = multer.memoryStorage();
 
 const fileFilter = (_req, file, cb) => {
-  const allowedMimes = /^(image\/(jpeg|png|gif|webp|heic|heif|bmp|tiff)|video\/(mp4|quicktime|x-msvideo))$/;
+  const allowedMimes = /^(image\/(jpeg|png|gif|webp|heic|heif|bmp|tiff)|video\/.*)$/i;
   if (allowedMimes.test(file.mimetype)) {
     cb(null, true);
   } else {
@@ -44,12 +44,14 @@ const processFile = async (file) => {
   const contentType = img ? 'image/webp' : file.mimetype;
 
   if (useS3) {
-    await s3.send(new PutObjectCommand({
-      Bucket: process.env.LINODE_S3_BUCKET,
-      Key: key,
-      Body: buf,
-      ContentType: contentType,
-    }));
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: process.env.LINODE_S3_BUCKET,
+        Key: key,
+        Body: buf,
+        ContentType: contentType,
+      })
+    );
     const baseUrl = (process.env.LINODE_S3_PUBLIC_URL || '').replace(/\/$/, '');
     file.location = baseUrl ? `${baseUrl}/${key}` : key;
   } else {
@@ -72,16 +74,27 @@ const processAllFiles = async (req) => {
     if (Array.isArray(req.files)) {
       await Promise.all(req.files.map(processFile));
     } else {
-      await Promise.all(
-        Object.values(req.files).flatMap((arr) => arr.map(processFile))
-      );
+      await Promise.all(Object.values(req.files).flatMap((arr) => arr.map(processFile)));
     }
   }
 };
 
 const wrapUpload = (multerMiddleware) => (req, res, next) => {
   multerMiddleware(req, res, async (err) => {
-    if (err) return next(err);
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        const limitMb = parseInt(process.env.MAX_FILE_SIZE_MB) || 500;
+        return res
+          .status(413)
+          .json({ error: `File too large. Maximum allowed size is ${limitMb}MB.` });
+      }
+      if (err.message === 'File type not allowed') {
+        return res
+          .status(415)
+          .json({ error: 'File type not allowed. Please upload an image or video.' });
+      }
+      return next(err);
+    }
     try {
       await processAllFiles(req);
       next();

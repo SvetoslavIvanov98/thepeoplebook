@@ -1,6 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import api from '../../services/api';
 import PostCard from './PostCard';
+import { PostSkeleton } from '../Skeleton';
 
 export default function PostFeed() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isPending } = useInfiniteQuery({
@@ -14,7 +15,14 @@ export default function PostFeed() {
 
   const posts = data?.pages.flat() || [];
 
-  if (isPending) return <div className="p-4 text-center text-gray-400">Loading…</div>;
+  if (isPending)
+    return (
+      <div className="flex flex-col gap-2">
+        <PostSkeleton />
+        <PostSkeleton />
+        <PostSkeleton />
+      </div>
+    );
   if (!posts.length)
     return (
       <div className="p-8 text-center text-gray-400">

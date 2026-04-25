@@ -53,7 +53,7 @@ const getUsers = async (req, res, next) => {
 
     const [rows, total] = await Promise.all([
       db.query(
-        `SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.is_verified, u.role, u.created_at,
+        `SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.is_verified, u.role, u.is_banned, u.created_at,
                 u.post_count,
                 u.following_count,
                 u.followers_count

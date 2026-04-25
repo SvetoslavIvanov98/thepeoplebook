@@ -3,12 +3,13 @@ import api from '../services/api';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { UserSkeleton } from './Skeleton';
 
 export default function RightPanel() {
   const qc = useQueryClient();
   const [followed, setFollowed] = useState({});
 
-  const { data: suggested } = useQuery({
+  const { data: suggested, isPending } = useQuery({
     queryKey: ['suggested-users'],
     queryFn: () => api.get('/users/suggested').then((r) => r.data),
     staleTime: 60_000,
@@ -47,43 +48,51 @@ export default function RightPanel() {
           animate="show"
           className="flex flex-col gap-3"
         >
-          {(suggested || []).slice(0, 6).map((u) => (
-            <motion.div
-              variants={itemVariants}
-              key={u.id}
-              className="flex items-center gap-3 p-2 rounded-2xl hover:bg-white dark:hover:bg-gray-800/80 transition-colors group"
-            >
-              <Link to={`/${u.username}`} className="relative shrink-0">
-                <img
-                  src={u.avatar_url || `https://ui-avatars.com/api/?name=${u.username}`}
-                  alt={u.username}
-                  className="w-10 h-10 rounded-full object-cover shadow-sm group-hover:shadow transition-shadow"
-                />
-                <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/10"></div>
-              </Link>
-              <div className="flex-1 min-w-0">
-                <Link
-                  to={`/${u.username}`}
-                  className="font-bold text-sm text-gray-900 dark:text-gray-100 hover:text-brand-600 dark:hover:text-brand-400 truncate block transition-colors"
-                >
-                  {u.full_name || u.username}
-                </Link>
-                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">@{u.username}</p>
-              </div>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => toggleFollow(u.id)}
-                className={`text-xs font-bold rounded-full px-4 py-1.5 transition-all shadow-sm ${
-                  followed[u.id]
-                    ? 'border-2 border-gray-200 dark:border-gray-700 bg-transparent text-gray-700 dark:text-gray-300 hover:border-red-200 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10'
-                    : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-brand-600 hover:text-white dark:hover:bg-brand-500 dark:hover:text-white'
-                }`}
+          {isPending ? (
+            <>
+              <UserSkeleton />
+              <UserSkeleton />
+              <UserSkeleton />
+            </>
+          ) : (
+            (suggested || []).slice(0, 6).map((u) => (
+              <motion.div
+                variants={itemVariants}
+                key={u.id}
+                className="flex items-center gap-3 p-2 rounded-2xl hover:bg-white dark:hover:bg-gray-800/80 transition-colors group"
               >
-                {followed[u.id] ? 'Following' : 'Follow'}
-              </motion.button>
-            </motion.div>
-          ))}
+                <Link to={`/${u.username}`} className="relative shrink-0">
+                  <img
+                    src={u.avatar_url || `https://ui-avatars.com/api/?name=${u.username}`}
+                    alt={u.username}
+                    className="w-10 h-10 rounded-full object-cover shadow-sm group-hover:shadow transition-shadow"
+                  />
+                  <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-black/10 dark:ring-white/10"></div>
+                </Link>
+                <div className="flex-1 min-w-0">
+                  <Link
+                    to={`/${u.username}`}
+                    className="font-bold text-sm text-gray-900 dark:text-gray-100 hover:text-brand-600 dark:hover:text-brand-400 truncate block transition-colors"
+                  >
+                    {u.full_name || u.username}
+                  </Link>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">@{u.username}</p>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => toggleFollow(u.id)}
+                  className={`text-xs font-bold rounded-full px-4 py-1.5 transition-all shadow-sm ${
+                    followed[u.id]
+                      ? 'border-2 border-gray-200 dark:border-gray-700 bg-transparent text-gray-700 dark:text-gray-300 hover:border-red-200 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10'
+                      : 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-brand-600 hover:text-white dark:hover:bg-brand-500 dark:hover:text-white'
+                  }`}
+                >
+                  {followed[u.id] ? 'Following' : 'Follow'}
+                </motion.button>
+              </motion.div>
+            ))
+          )}
         </motion.div>
       </div>
     </aside>

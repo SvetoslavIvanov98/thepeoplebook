@@ -4,13 +4,15 @@ import { useTheme } from '../hooks/useTheme';
 import { motion } from 'framer-motion';
 import Logo from './Logo';
 
+import { Home, Bell, MessageCircle, Users, Camera, Search, Sun, Moon, LogOut } from 'lucide-react';
+
 const links = [
-  { to: '/feed', label: 'Feed', icon: '🏠' },
-  { to: '/notifications', label: 'Notifications', icon: '🔔' },
-  { to: '/messages', label: 'Messages', icon: '💬' },
-  { to: '/groups', label: 'Groups', icon: '👥' },
-  { to: '/stories', label: 'Stories', icon: '📸' },
-  { to: '/search', label: 'Search', icon: '🔍' },
+  { to: '/feed', label: 'Feed', icon: <Home className="w-6 h-6" /> },
+  { to: '/notifications', label: 'Notifications', icon: <Bell className="w-6 h-6" /> },
+  { to: '/messages', label: 'Messages', icon: <MessageCircle className="w-6 h-6" /> },
+  { to: '/groups', label: 'Groups', icon: <Users className="w-6 h-6" /> },
+  { to: '/stories', label: 'Stories', icon: <Camera className="w-6 h-6" /> },
+  { to: '/search', label: 'Search', icon: <Search className="w-6 h-6" /> },
 ];
 
 export default function Sidebar() {
@@ -44,7 +46,7 @@ export default function Sidebar() {
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                 />
               )}
-              <span className="text-xl transition-transform duration-200 hover:scale-110">
+              <span className="text-gray-500 dark:text-gray-400 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors duration-200">
                 {icon}
               </span>
               <span className="text-base">{label}</span>
@@ -81,7 +83,7 @@ export default function Sidebar() {
               className="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-red-50 dark:hover:bg-red-950/30"
               title="Logout"
             >
-              ⏻
+              <LogOut className="w-5 h-5" />
             </button>
           </div>
         )}
@@ -90,7 +92,9 @@ export default function Sidebar() {
           onClick={toggle}
           className="flex items-center gap-4 px-4 py-3 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-800/50 w-full text-left text-sm font-medium transition-colors text-gray-700 dark:text-gray-300"
         >
-          <span className="text-xl">{dark ? '☀️' : '🌙'}</span>
+          <span className="text-gray-500 dark:text-gray-400">
+            {dark ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
+          </span>
           <span className="text-base">{dark ? 'Light mode' : 'Dark mode'}</span>
         </button>
       </div>

@@ -11,7 +11,7 @@ import { useEffect, useCallback } from 'react';
 export default function MediaLightbox({ items = [], index, onClose, onNav }) {
   const isOpen = index !== null && index !== undefined;
   const url = isOpen ? items[index] : null;
-  const isVideo = url && /\.(mp4|mov|avi)/i.test(url);
+  const isVideo = url && /\.(mp4|mov|avi|webm|mkv|ogg|wmv|flv)/i.test(url);
 
   const prev = useCallback(() => {
     if (index > 0) onNav(index - 1);
@@ -62,7 +62,10 @@ export default function MediaLightbox({ items = [], index, onClose, onNav }) {
       {/* Prev arrow */}
       {index > 0 && (
         <button
-          onClick={(e) => { e.stopPropagation(); prev(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            prev();
+          }}
           className="absolute left-3 top-1/2 -translate-y-1/2 text-white text-4xl bg-black/40 hover:bg-black/70 rounded-full w-12 h-12 flex items-center justify-center transition-colors z-10"
           aria-label="Previous"
         >
@@ -97,7 +100,10 @@ export default function MediaLightbox({ items = [], index, onClose, onNav }) {
       {/* Next arrow */}
       {index < items.length - 1 && (
         <button
-          onClick={(e) => { e.stopPropagation(); next(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            next();
+          }}
           className="absolute right-3 top-1/2 -translate-y-1/2 text-white text-4xl bg-black/40 hover:bg-black/70 rounded-full w-12 h-12 flex items-center justify-center transition-colors z-10"
           aria-label="Next"
         >
@@ -111,13 +117,18 @@ export default function MediaLightbox({ items = [], index, onClose, onNav }) {
           {items.map((u, i) => (
             <button
               key={i}
-              onClick={(e) => { e.stopPropagation(); onNav(i); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onNav(i);
+              }}
               className={`shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors ${
                 i === index ? 'border-white' : 'border-transparent opacity-60 hover:opacity-100'
               }`}
             >
-              {/\.(mp4|mov|avi)/i.test(u) ? (
-                <div className="w-full h-full bg-gray-700 flex items-center justify-center text-white text-xl">▶</div>
+              {/\.(mp4|mov|avi|webm|mkv|ogg|wmv|flv)/i.test(u) ? (
+                <div className="w-full h-full bg-gray-700 flex items-center justify-center text-white text-xl">
+                  ▶
+                </div>
               ) : (
                 <img src={u} alt="" className="w-full h-full object-cover" draggable={false} />
               )}

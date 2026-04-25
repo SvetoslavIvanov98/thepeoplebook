@@ -2,12 +2,14 @@ import { NavLink, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/auth.store';
 import { useTheme } from '../hooks/useTheme';
 
+import { Home, Users, Search, Camera, Bell, Sun, Moon, LogOut } from 'lucide-react';
+
 const links = [
-  { to: '/feed', icon: '🏠' },
-  { to: '/groups', icon: '👥' },
-  { to: '/search', icon: '🔍' },
-  { to: '/stories', icon: '📸' },
-  { to: '/notifications', icon: '🔔' },
+  { to: '/feed', icon: <Home className="w-6 h-6" /> },
+  { to: '/groups', icon: <Users className="w-6 h-6" /> },
+  { to: '/search', icon: <Search className="w-6 h-6" /> },
+  { to: '/stories', icon: <Camera className="w-6 h-6" /> },
+  { to: '/notifications', icon: <Bell className="w-6 h-6" /> },
 ];
 
 export default function MobileNav() {
@@ -33,8 +35,11 @@ export default function MobileNav() {
       ))}
 
       {/* Theme toggle */}
-      <button onClick={toggle} className="p-2 rounded-xl text-2xl text-gray-500">
-        {dark ? '☀️' : '🌙'}
+      <button
+        onClick={toggle}
+        className="p-2 rounded-xl text-gray-500 hover:text-brand-600 transition-colors"
+      >
+        {dark ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
       </button>
 
       {/* Profile avatar → profile page */}
@@ -56,20 +61,7 @@ export default function MobileNav() {
           title="Logout"
           aria-label="Logout"
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="w-6 h-6"
-          >
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
-          </svg>
+          <LogOut className="w-6 h-6" />
         </button>
       )}
     </nav>
