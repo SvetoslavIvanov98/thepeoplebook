@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { emitNotification } = require('../services/notification.service');
+const { sanitizeLike } = require('../utils/sanitize');
 
 const createGroup = async (req, res, next) => {
   try {
@@ -13,10 +14,11 @@ const createGroup = async (req, res, next) => {
       [name, description || null, cover_url, req.user.id, privacy]
     );
     const group = result.rows[0];
-    await db.query(
-      'INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)',
-      [group.id, req.user.id, 'admin']
-    );
+    await db.query('INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)', [
+      group.id,
+      req.user.id,
+      'admin',
+    ]);
     res.status(201).json(group);
   } catch (err) {
     next(err);
@@ -40,10 +42,22 @@ const updateGroup = async (req, res, next) => {
     const setParts = [];
     const vals = [];
     let idx = 1;
-    if (name !== undefined)        { setParts.push(`name = $${idx++}`);        vals.push(name); }
-    if (description !== undefined) { setParts.push(`description = $${idx++}`); vals.push(description); }
-    if (privacy !== undefined)     { setParts.push(`privacy = $${idx++}`);     vals.push(privacy); }
-    if (req.file)                  { setParts.push(`cover_url = $${idx++}`);   vals.push(req.file.location); }
+    if (name !== undefined) {
+      setParts.push(`name = $${idx++}`);
+      vals.push(name);
+    }
+    if (description !== undefined) {
+      setParts.push(`description = $${idx++}`);
+      vals.push(description);
+    }
+    if (privacy !== undefined) {
+      setParts.push(`privacy = $${idx++}`);
+      vals.push(privacy);
+    }
+    if (req.file) {
+      setParts.push(`cover_url = $${idx++}`);
+      vals.push(req.file.location);
+    }
     if (!setParts.length) return res.status(400).json({ error: 'Nothing to update' });
 
     vals.push(id);
@@ -117,7 +131,7 @@ const listGroups = async (req, res, next) => {
     let whereExtra = '';
     if (q) {
       whereExtra = `AND (g.name ILIKE $${pIdx} OR g.description ILIKE $${pIdx})`;
-      params.push(`%${q}%`);
+      params.push(`%${sanitizeLike(q)}%`);
       pIdx++;
     }
 
@@ -184,10 +198,11 @@ const joinLeaveGroup = async (req, res, next) => {
       return res.json({ member: false, requested: true });
     }
 
-    await db.query(
-      'INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)',
-      [id, req.user.id, 'member']
-    );
+    await db.query('INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)', [
+      id,
+      req.user.id,
+      'member',
+    ]);
     res.json({ member: true, requested: false });
   } catch (err) {
     next(err);
@@ -237,7 +252,10 @@ const respondToJoinRequest = async (req, res, next) => {
     if (!reqRow.rows[0]) return res.status(404).json({ error: 'Request not found' });
 
     const newStatus = action === 'approve' ? 'approved' : 'denied';
-    await db.query('UPDATE group_join_requests SET status = $1 WHERE id = $2', [newStatus, requestId]);
+    await db.query('UPDATE group_join_requests SET status = $1 WHERE id = $2', [
+      newStatus,
+      requestId,
+    ]);
 
     if (action === 'approve') {
       await db.query(
@@ -318,7 +336,8 @@ async function inviteToGroup(req, res, next) {
       'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2',
       [id, req.user.id]
     );
-    if (!member.rows[0]) return res.status(403).json({ error: 'You must be a member to invite others' });
+    if (!member.rows[0])
+      return res.status(403).json({ error: 'You must be a member to invite others' });
 
     const group = await db.query('SELECT id, name FROM groups WHERE id = $1', [id]);
     if (!group.rows[0]) return res.status(404).json({ error: 'Group not found' });
@@ -330,7 +349,10 @@ async function inviteToGroup(req, res, next) {
         'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2',
         [id, uid]
       );
-      if (alreadyMember.rows[0]) { results.push({ user_id: uid, status: 'already_member' }); continue; }
+      if (alreadyMember.rows[0]) {
+        results.push({ user_id: uid, status: 'already_member' });
+        continue;
+      }
 
       // Upsert invite (reset to pending if previously declined)
       await db.query(
@@ -370,7 +392,10 @@ async function respondToInvite(req, res, next) {
     if (!invite.rows[0]) return res.status(404).json({ error: 'No pending invite found' });
 
     const newStatus = action === 'accept' ? 'accepted' : 'declined';
-    await db.query('UPDATE group_invites SET status = $1 WHERE id = $2', [newStatus, invite.rows[0].id]);
+    await db.query('UPDATE group_invites SET status = $1 WHERE id = $2', [
+      newStatus,
+      invite.rows[0].id,
+    ]);
 
     if (action === 'accept') {
       await db.query(

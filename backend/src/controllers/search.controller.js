@@ -1,11 +1,12 @@
 const db = require('../config/db');
+const { sanitizeLike } = require('../utils/sanitize');
 
 const search = async (req, res, next) => {
   try {
     const q = (req.query.q || '').trim();
     if (!q) return res.json({ users: [], posts: [], hashtags: [] });
 
-    const pattern = `%${q}%`;
+    const pattern = `%${sanitizeLike(q)}%`;
 
     const [users, posts, hashtags] = await Promise.all([
       db.query(
@@ -27,7 +28,7 @@ const search = async (req, res, next) => {
       ),
     ]);
 
-    res.json({ users: users.rows, posts: posts.rows, hashtags: hashtags.rows.map(r => r.tag) });
+    res.json({ users: users.rows, posts: posts.rows, hashtags: hashtags.rows.map((r) => r.tag) });
   } catch (err) {
     next(err);
   }

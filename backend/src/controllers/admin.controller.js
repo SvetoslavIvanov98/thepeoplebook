@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { emitNotification } = require('../services/notification.service');
+const { sanitizeLike } = require('../utils/sanitize');
 
 // GET /api/admin/stats
 const getStats = async (req, res, next) => {
@@ -15,7 +16,9 @@ const getStats = async (req, res, next) => {
 
     const [newUsersToday, newPostsToday] = await Promise.all([
       db.query("SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '24 hours'"),
-      db.query("SELECT COUNT(*) FROM posts WHERE created_at >= NOW() - INTERVAL '24 hours' AND deleted_at IS NULL"),
+      db.query(
+        "SELECT COUNT(*) FROM posts WHERE created_at >= NOW() - INTERVAL '24 hours' AND deleted_at IS NULL"
+      ),
     ]);
 
     res.json({
@@ -39,10 +42,12 @@ const getUsers = async (req, res, next) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
-    const q = req.query.q ? `%${req.query.q}%` : null;
+    const q = req.query.q ? `%${sanitizeLike(req.query.q)}%` : null;
 
     const params = q ? [q, limit, offset] : [limit, offset];
-    const whereClause = q ? "WHERE u.username ILIKE $1 OR u.email ILIKE $1 OR u.full_name ILIKE $1" : '';
+    const whereClause = q
+      ? 'WHERE u.username ILIKE $1 OR u.email ILIKE $1 OR u.full_name ILIKE $1'
+      : '';
     const limitParam = q ? '$2' : '$1';
     const offsetParam = q ? '$3' : '$2';
 
@@ -58,10 +63,7 @@ const getUsers = async (req, res, next) => {
          LIMIT ${limitParam} OFFSET ${offsetParam}`,
         params
       ),
-      db.query(
-        `SELECT COUNT(*) FROM users u ${whereClause}`,
-        q ? [q] : []
-      ),
+      db.query(`SELECT COUNT(*) FROM users u ${whereClause}`, q ? [q] : []),
     ]);
 
     res.json({
@@ -126,10 +128,12 @@ const getPosts = async (req, res, next) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
-    const q = req.query.q ? `%${req.query.q}%` : null;
+    const q = req.query.q ? `%${sanitizeLike(req.query.q)}%` : null;
 
     const params = q ? [q, limit, offset] : [limit, offset];
-    const whereClause = q ? "WHERE p.content ILIKE $1 AND p.deleted_at IS NULL" : 'WHERE p.deleted_at IS NULL';
+    const whereClause = q
+      ? 'WHERE p.content ILIKE $1 AND p.deleted_at IS NULL'
+      : 'WHERE p.deleted_at IS NULL';
     const limitParam = q ? '$2' : '$1';
     const offsetParam = q ? '$3' : '$2';
 
@@ -146,10 +150,7 @@ const getPosts = async (req, res, next) => {
          LIMIT ${limitParam} OFFSET ${offsetParam}`,
         params
       ),
-      db.query(
-        `SELECT COUNT(*) FROM posts p ${whereClause}`,
-        q ? [q] : []
-      ),
+      db.query(`SELECT COUNT(*) FROM posts p ${whereClause}`, q ? [q] : []),
     ]);
 
     res.json({
@@ -215,10 +216,7 @@ const getGroups = async (req, res, next) => {
 const deleteGroup = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const result = await db.query(
-      'DELETE FROM groups WHERE id = $1 RETURNING id',
-      [id]
-    );
+    const result = await db.query('DELETE FROM groups WHERE id = $1 RETURNING id', [id]);
     if (!result.rows[0]) return res.status(404).json({ error: 'Group not found' });
     res.json({ success: true });
   } catch (err) {
@@ -266,10 +264,7 @@ const getReports = async (req, res, next) => {
          LIMIT ${limitParam} OFFSET ${offsetParam}`,
         params
       ),
-      db.query(
-        `SELECT COUNT(*) FROM content_reports r ${whereClause}`,
-        status ? [status] : []
-      ),
+      db.query(`SELECT COUNT(*) FROM content_reports r ${whereClause}`, status ? [status] : []),
     ]);
 
     res.json({
@@ -322,14 +317,18 @@ const resolveReport = async (req, res, next) => {
 
     const validActions = ['content_removed', 'account_suspended', 'warning', 'no_action'];
     if (!validActions.includes(action_type)) {
-      return res.status(400).json({ error: `action_type must be one of: ${validActions.join(', ')}` });
+      return res
+        .status(400)
+        .json({ error: `action_type must be one of: ${validActions.join(', ')}` });
     }
     if (!reason) return res.status(400).json({ error: 'reason is required' });
 
     // Apply the action
     if (action_type === 'content_removed') {
-      if (rpt.post_id) await db.query('UPDATE posts SET deleted_at = NOW() WHERE id = $1', [rpt.post_id]);
-      if (rpt.comment_id) await db.query('UPDATE comments SET deleted_at = NOW() WHERE id = $1', [rpt.comment_id]);
+      if (rpt.post_id)
+        await db.query('UPDATE posts SET deleted_at = NOW() WHERE id = $1', [rpt.post_id]);
+      if (rpt.comment_id)
+        await db.query('UPDATE comments SET deleted_at = NOW() WHERE id = $1', [rpt.comment_id]);
     } else if (action_type === 'account_suspended') {
       await db.query('UPDATE users SET is_banned = TRUE WHERE id = $1', [targetUserId]);
     }
@@ -416,9 +415,16 @@ const resolveAppeal = async (req, res, next) => {
     if (outcome === 'overturned') {
       const d = decision.rows[0];
       if (d.action_type === 'content_removed' && d.report_id) {
-        const rpt = await db.query('SELECT post_id, comment_id FROM content_reports WHERE id = $1', [d.report_id]);
-        if (rpt.rows[0]?.post_id) await db.query('UPDATE posts SET deleted_at = NULL WHERE id = $1', [rpt.rows[0].post_id]);
-        if (rpt.rows[0]?.comment_id) await db.query('UPDATE comments SET deleted_at = NULL WHERE id = $1', [rpt.rows[0].comment_id]);
+        const rpt = await db.query(
+          'SELECT post_id, comment_id FROM content_reports WHERE id = $1',
+          [d.report_id]
+        );
+        if (rpt.rows[0]?.post_id)
+          await db.query('UPDATE posts SET deleted_at = NULL WHERE id = $1', [rpt.rows[0].post_id]);
+        if (rpt.rows[0]?.comment_id)
+          await db.query('UPDATE comments SET deleted_at = NULL WHERE id = $1', [
+            rpt.rows[0].comment_id,
+          ]);
       } else if (d.action_type === 'account_suspended') {
         await db.query('UPDATE users SET is_banned = FALSE WHERE id = $1', [d.target_user_id]);
       }
@@ -435,4 +441,17 @@ const resolveAppeal = async (req, res, next) => {
   }
 };
 
-module.exports = { getStats, getUsers, setUserRole, setBan, getPosts, deletePost, getGroups, deleteGroup, getReports, resolveReport, getAppeals, resolveAppeal };
+module.exports = {
+  getStats,
+  getUsers,
+  setUserRole,
+  setBan,
+  getPosts,
+  deletePost,
+  getGroups,
+  deleteGroup,
+  getReports,
+  resolveReport,
+  getAppeals,
+  resolveAppeal,
+};
