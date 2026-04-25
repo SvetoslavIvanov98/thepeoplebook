@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "db:migrate": "node src/config/migrate.js"
+    "db:migrate": "node src/config/migrate.js",
+    "test": "jest"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
@@ -25,12 +26,15 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.12.0",
+    "redis": "^5.12.1",
     "sharp": "^0.33.4",
     "socket.io": "^4.7.5",
     "uuid": "^10.0.0",
     "winston": "^3.13.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "jest": "^30.3.0",
+    "nodemon": "^3.1.4",
+    "supertest": "^7.2.2"
   }
 }

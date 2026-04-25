@@ -18,6 +18,11 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    restart: always
+    expose:
+      - '6379'
 
   backend:
     build:
@@ -27,12 +32,14 @@ services:
     env_file: ./backend/.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - '4000:4000'
-
 
   frontend:
     build:
@@ -43,7 +50,6 @@ services:
       - '5173:80'
     depends_on:
       - backend
-
 
 volumes:
   db_data:

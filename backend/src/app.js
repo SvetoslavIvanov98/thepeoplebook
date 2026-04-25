@@ -5,6 +5,8 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const passport = require('passport');
 const path = require('path');
+const logger = require('./utils/logger');
+const AppError = require('./utils/AppError');
 
 require('./config/passport');
 
@@ -32,16 +34,18 @@ app.set('trust proxy', 1);
 
 // Security
 app.use(helmet());
-app.use(cors({
-  origin: (origin, cb) => {
-    // Allow requests with no origin (mobile apps, curl, etc.)
-    if (!origin) return cb(null, true);
-    const allowed = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',');
-    if (allowed.some((u) => origin.startsWith(u.trim()))) return cb(null, true);
-    cb(null, false);
-  },
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return cb(null, true);
+      const allowed = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',');
+      if (allowed.some((u) => origin.startsWith(u.trim()))) return cb(null, true);
+      cb(null, false);
+    },
+    credentials: true,
+  })
+);
 
 // Rate limiting
 const limiter = rateLimit({
@@ -97,12 +101,18 @@ app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 // Global error handler
 app.use((err, _req, res, _next) => {
-  console.error(err);
+  if (err.isOperational) {
+    logger.error(`Operational Error: ${err.message}`);
+    return res.status(err.statusCode).json({ error: err.message });
+  }
+
+  logger.error('Unexpected Error:', err);
   const status = err.status || 500;
   // Do not leak internal error details in production
-  const message = process.env.NODE_ENV === 'production' && status === 500
-    ? 'Internal server error'
-    : err.message || 'Internal server error';
+  const message =
+    process.env.NODE_ENV === 'production' && status === 500
+      ? 'Internal server error'
+      : err.message || 'Internal server error';
   res.status(status).json({ error: message });
 });
 

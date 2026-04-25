@@ -1,0 +1,37 @@
+{
+  "name": "social",
+  "version": "1.0.0",
+  "description": "[![Watch the demo](https://img.youtube.com/vi/Li9VcNrbDqY/maxresdefault.jpg)](https://youtu.be/Li9VcNrbDqY)",
+  "main": "index.js",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,jsx,mjs,cjs,ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,css,md,yml,yaml,html}": [
+      "prettier --write"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SvetoslavIvanov98/thepeoplebook.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/SvetoslavIvanov98/thepeoplebook/issues"
+  },
+  "homepage": "https://github.com/SvetoslavIvanov98/thepeoplebook#readme",
+  "devDependencies": {
+    "eslint": "^10.2.1",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.8.3"
+  }
+}

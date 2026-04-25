@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { deleteS3Object } = require('../config/s3');
+const { invalidateCache } = require('../middleware/cache.middleware');
 
 const getProfile = async (req, res, next) => {
   try {
@@ -32,18 +33,29 @@ const updateProfile = async (req, res, next) => {
     const values = [];
     let idx = 1;
 
-    if (full_name !== undefined) { fields.push(`full_name = $${idx++}`); values.push(full_name); }
-    if (bio !== undefined) { fields.push(`bio = $${idx++}`); values.push(bio); }
-    if (avatar_url) { fields.push(`avatar_url = $${idx++}`); values.push(avatar_url); }
-    if (cover_url) { fields.push(`cover_url = $${idx++}`); values.push(cover_url); }
+    if (full_name !== undefined) {
+      fields.push(`full_name = $${idx++}`);
+      values.push(full_name);
+    }
+    if (bio !== undefined) {
+      fields.push(`bio = $${idx++}`);
+      values.push(bio);
+    }
+    if (avatar_url) {
+      fields.push(`avatar_url = $${idx++}`);
+      values.push(avatar_url);
+    }
+    if (cover_url) {
+      fields.push(`cover_url = $${idx++}`);
+      values.push(cover_url);
+    }
 
     if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 
     // Fetch old URLs before overwriting so we can delete them from S3
-    const oldResult = await db.query(
-      'SELECT avatar_url, cover_url FROM users WHERE id = $1',
-      [req.user.id]
-    );
+    const oldResult = await db.query('SELECT avatar_url, cover_url FROM users WHERE id = $1', [
+      req.user.id,
+    ]);
     const old = oldResult.rows[0] || {};
 
     values.push(req.user.id);
@@ -55,6 +67,9 @@ const updateProfile = async (req, res, next) => {
     // Remove replaced files from S3
     if (avatar_url && old.avatar_url) await deleteS3Object(old.avatar_url);
     if (cover_url && old.cover_url) await deleteS3Object(old.cover_url);
+
+    // Invalidate cached profile
+    await invalidateCache(`cache:*:/api/users/${result.rows[0].username}*`);
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -122,7 +137,8 @@ const deleteAccount = async (req, res, next) => {
     const user = result.rows[0];
 
     if (user.password_hash) {
-      if (!password) return res.status(400).json({ error: 'Password is required to delete account' });
+      if (!password)
+        return res.status(400).json({ error: 'Password is required to delete account' });
       const bcrypt = require('bcryptjs');
       const valid = await bcrypt.compare(password, user.password_hash);
       if (!valid) return res.status(401).json({ error: 'Incorrect password' });
@@ -142,8 +158,16 @@ const exportMyData = async (req, res, next) => {
     const userId = req.user.id;
 
     const [
-      userResult, postsResult, commentsResult, followingResult, followersResult,
-      storiesResult, notificationsResult, messagesResult, blocksResult, mutesResult,
+      userResult,
+      postsResult,
+      commentsResult,
+      followingResult,
+      followersResult,
+      storiesResult,
+      notificationsResult,
+      messagesResult,
+      blocksResult,
+      mutesResult,
     ] = await Promise.all([
       db.query(
         'SELECT id, username, email, full_name, bio, avatar_url, date_of_birth, is_verified, created_at FROM users WHERE id = $1',
@@ -205,11 +229,21 @@ const exportMyData = async (req, res, next) => {
     };
 
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="thepeoplebook-data-${userId}.json"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="thepeoplebook-data-${userId}.json"`
+    );
     res.json(exportData);
   } catch (err) {
     next(err);
   }
 };
 
-module.exports = { getProfile, updateProfile, getSuggestedUsers, getUserPosts, deleteAccount, exportMyData };
+module.exports = {
+  getProfile,
+  updateProfile,
+  getSuggestedUsers,
+  getUserPosts,
+  deleteAccount,
+  exportMyData,
+};
