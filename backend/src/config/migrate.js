@@ -4,16 +4,33 @@ const path = require('path');
 const { pool } = require('./db');
 
 const run = async () => {
-  const sql = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'db', 'schema.sql'), 'utf8');
+  if (!pool) {
+    console.error('Database pool not initialized. Migration aborted.');
+    return;
+  }
+
+  // Inside Docker the file is mounted at /app/db/schema.sql
+  // Locally (from src/config/) it's ../../db/schema.sql which also resolves to <project>/db/schema.sql
+  const schemaPath = path.join(__dirname, '..', '..', 'db', 'schema.sql');
+  if (!fs.existsSync(schemaPath)) {
+    console.error(`Schema file not found at ${schemaPath}`);
+    return;
+  }
+
+  const sql = fs.readFileSync(schemaPath, 'utf8');
   try {
     await pool.query(sql);
-    console.log('Migration complete');
+    console.log('Database synchronization complete');
   } catch (err) {
-    console.error('Migration failed:', err.message);
-    process.exit(1);
-  } finally {
-    await pool.end();
+    console.error('Database synchronization failed:', err.message);
+    if (process.env.NODE_ENV !== 'development') {
+      process.exit(1);
+    }
   }
 };
 
-run();
+if (require.main === module) {
+  run().then(() => pool && pool.end());
+}
+
+module.exports = run;

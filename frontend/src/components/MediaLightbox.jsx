@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Facebook-style lightbox for photos and videos.
@@ -38,9 +39,9 @@ export default function MediaLightbox({ items = [], index, onClose, onNav }) {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/95 backdrop-blur-md transition-all duration-300"
       onClick={onClose}
     >
       {/* Close button */}
@@ -84,7 +85,9 @@ export default function MediaLightbox({ items = [], index, onClose, onNav }) {
             src={url}
             controls
             autoPlay
-            className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl"
+            muted
+            playsInline
+            className="max-w-[90vw] max-h-[90vh] rounded-lg shadow-2xl bg-black"
           />
         ) : (
           <img
@@ -136,6 +139,7 @@ export default function MediaLightbox({ items = [], index, onClose, onNav }) {
           ))}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

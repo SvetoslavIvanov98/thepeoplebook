@@ -76,6 +76,16 @@ CREATE TABLE IF NOT EXISTS group_join_requests (
 
 CREATE INDEX IF NOT EXISTS idx_group_join_requests ON group_join_requests (group_id, status);
 
+CREATE TABLE IF NOT EXISTS group_invites (
+  id          BIGSERIAL PRIMARY KEY,
+  group_id    BIGINT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  inviter_id  BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invitee_id  BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status      VARCHAR(10) NOT NULL DEFAULT 'pending',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (group_id, invitee_id)
+);
+
 -- ─── Posts ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS posts (
   id          BIGSERIAL PRIMARY KEY,
@@ -86,6 +96,7 @@ CREATE TABLE IF NOT EXISTS posts (
   repost_id   BIGINT REFERENCES posts(id) ON DELETE SET NULL,
   group_id    BIGINT REFERENCES groups(id) ON DELETE SET NULL,
   deleted_at  TIMESTAMPTZ,
+  edited_at   TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -94,6 +105,9 @@ CREATE INDEX IF NOT EXISTS idx_posts_user_id   ON posts (user_id, created_at DES
 CREATE INDEX IF NOT EXISTS idx_posts_hashtags  ON posts USING gin (hashtags);
 CREATE INDEX IF NOT EXISTS idx_posts_content   ON posts USING gin (content gin_trgm_ops) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_posts_group_id  ON posts (group_id) WHERE group_id IS NOT NULL;
+
+-- Idempotent: add edited_at column on existing databases
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
 
 -- ─── Likes ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS likes (
@@ -116,14 +130,22 @@ CREATE TABLE IF NOT EXISTS comments (
   content     TEXT NOT NULL,
   parent_id   BIGINT REFERENCES comments(id) ON DELETE CASCADE,
   deleted_at  TIMESTAMPTZ,
+  edited_at   TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments (post_id, created_at) WHERE deleted_at IS NULL;
 
--- Add FK for likes.comment_id now that comments table exists
-ALTER TABLE likes ADD CONSTRAINT fk_likes_comment
-  FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE;
+-- Idempotent: add edited_at column on existing databases
+ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+
+-- Add FK for likes.comment_id now that comments table exists (idempotent)
+DO $$ BEGIN
+  ALTER TABLE likes ADD CONSTRAINT fk_likes_comment
+    FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ─── Stories ──────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS stories (
@@ -148,6 +170,9 @@ CREATE TABLE IF NOT EXISTS notifications (
   read        BOOLEAN NOT NULL DEFAULT FALSE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Idempotent: add group_id column on existing databases
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES groups(id) ON DELETE CASCADE;
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, read, created_at DESC);
 
@@ -220,6 +245,16 @@ CREATE TABLE IF NOT EXISTS push_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens (user_id);
+
+-- ─── Web Push Subscriptions ──────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+  id          BIGSERIAL PRIMARY KEY,
+  user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subscription JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_web_push_subs_user ON web_push_subscriptions (user_id);
 
 -- ─── Content Reports (DSA Art. 16) ───────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS content_reports (

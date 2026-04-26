@@ -21,7 +21,7 @@ export default function PostFeed() {
 
   const virtualizer = useWindowVirtualizer({
     count: hasNextPage ? posts.length + 1 : posts.length,
-    estimateSize: () => 400, // Estimated height of a post
+    estimateSize: () => 600, // Increased estimate for new Facebook-style grid
     overscan: 5,
   });
 

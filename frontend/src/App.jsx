@@ -3,6 +3,7 @@ import { useAuthStore } from './store/auth.store';
 import { useEffect } from 'react';
 import { initSocket } from './services/socket.service';
 import CookieBanner from './components/CookieBanner';
+import GlobalLightbox from './components/GlobalLightbox';
 
 import MainLayout from './components/layout/MainLayout';
 import AuthLayout from './components/layout/AuthLayout';
@@ -101,6 +102,7 @@ export default function App() {
           <Route path="/admin/reports" element={<AdminReportsPage />} />
         </Route>
       </Routes>
+      <GlobalLightbox />
     </>
   );
 }

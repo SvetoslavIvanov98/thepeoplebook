@@ -9,7 +9,8 @@
     "db:migrate": "node src/config/migrate.js",
     "test": "jest",
     "test:unit": "jest --selectProjects unit",
-    "test:integration": "jest --selectProjects integration --runInBand"
+    "test:integration": "jest --selectProjects integration --runInBand",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
@@ -39,12 +40,12 @@
     "uuid": "^10.0.0",
     "web-push": "^3.6.7",
     "winston": "^3.13.0",
-    "xss": "^1.0.15"
+    "xss": "^1.0.15",
+    "prisma": "^7.8.0"
   },
   "devDependencies": {
     "jest": "^30.3.0",
     "nodemon": "^3.1.4",
-    "prisma": "^7.8.0",
     "supertest": "^7.2.2"
   }
 }

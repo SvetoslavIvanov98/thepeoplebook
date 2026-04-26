@@ -176,7 +176,7 @@ export default function ProfilePage({ user }) {
       <div
         className="relative h-56 md:h-64 bg-gradient-to-tr from-brand-600 via-purple-500 to-pink-500 overflow-hidden cursor-pointer group"
         onClick={() => {
-          if (isMe) coverInputRef.current?.click();
+          if (isMe && !profile.cover_url) coverInputRef.current?.click();
           else if (profile.cover_url) setLightboxUrl(profile.cover_url);
         }}
       >
@@ -191,9 +191,22 @@ export default function ProfilePage({ user }) {
           />
         )}
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-sm">
-          <span className="bg-white/20 text-white text-sm font-bold px-4 py-2 rounded-full backdrop-blur-md border border-white/30 shadow-soft">
-            {isMe ? 'Change cover photo' : profile.cover_url ? 'View cover photo' : ''}
-          </span>
+          <div className="flex flex-col gap-2 items-center">
+            <span className="bg-white/20 text-white text-sm font-bold px-4 py-2 rounded-full backdrop-blur-md border border-white/30 shadow-soft">
+              {profile.cover_url ? 'View cover photo' : ''}
+            </span>
+            {isMe && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  coverInputRef.current?.click();
+                }}
+                className="bg-brand-600/80 hover:bg-brand-600 text-white text-xs font-bold px-4 py-1.5 rounded-full backdrop-blur-md transition-colors"
+              >
+                Change photo
+              </button>
+            )}
+          </div>
         </div>
         <input
           ref={coverInputRef}
@@ -210,11 +223,11 @@ export default function ProfilePage({ user }) {
           <div
             className="relative w-32 h-32 rounded-full overflow-hidden shadow-soft ring-4 ring-white dark:ring-gray-950 cursor-pointer group shrink-0 bg-gray-100 dark:bg-gray-800"
             onClick={() => {
-              if (isMe) avatarInputRef.current?.click();
+              if (isMe && !profile.avatar_url) avatarInputRef.current?.click();
               else
                 setLightboxUrl(
                   profile.avatar_url ||
-                    `https://ui-avatars.com/api/?name=${profile.username}&size=256`
+                    `https://ui-avatars.com/api/?name=${profile.username}&size=512`
                 );
             }}
           >
@@ -224,15 +237,26 @@ export default function ProfilePage({ user }) {
               transition={{ type: 'spring', damping: 20 }}
               src={
                 profile.avatar_url ||
-                `https://ui-avatars.com/api/?name=${profile.username}&size=128`
+                `https://ui-avatars.com/api/?name=${profile.username}&size=256`
               }
               alt={profile.username}
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center backdrop-blur-sm">
-              <span className="text-white text-xs font-bold text-center leading-tight px-3">
-                {isMe ? 'Update photo' : 'View full'}
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center backdrop-blur-sm p-2">
+              <span className="text-white text-xs font-bold text-center leading-tight mb-2">
+                {profile.avatar_url ? 'View full' : ''}
               </span>
+              {isMe && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    avatarInputRef.current?.click();
+                  }}
+                  className="bg-brand-600/80 hover:bg-brand-600 text-white text-[10px] font-bold px-2 py-1 rounded-full transition-colors"
+                >
+                  Update
+                </button>
+              )}
             </div>
             <input
               ref={avatarInputRef}
@@ -535,13 +559,17 @@ export default function ProfilePage({ user }) {
         </div>
       )}
 
-      {/* Media lightbox for cover / avatar */}
-      <MediaLightbox
-        items={lightboxUrl ? [lightboxUrl] : []}
-        index={lightboxUrl ? 0 : null}
-        onClose={() => setLightboxUrl(null)}
-        onNav={() => {}}
-      />
+      <AnimatePresence>
+        {lightboxUrl && (
+          <MediaLightbox
+            key="profile-media-lightbox"
+            items={[lightboxUrl]}
+            index={0}
+            onClose={() => setLightboxUrl(null)}
+            onNav={() => {}}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Delete account confirmation modal */}
       {deleteOpen && (

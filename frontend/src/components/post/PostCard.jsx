@@ -4,22 +4,94 @@ import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
 import api from '../../services/api';
 import { useAuthStore } from '../../store/auth.store';
-import PostLightbox from './PostLightbox';
+import { useLightboxStore } from '../../store/lightbox.store';
 import ReportButton from '../ReportButton';
 import toast from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 function PostContent({ content, media, onMediaClick }) {
+  const renderMedia = () => {
+    if (!media || media.length === 0) return null;
+
+    const count = media.length;
+    const gridClasses = {
+      1: 'grid-cols-1',
+      2: 'grid-cols-2',
+      3: 'grid-cols-2',
+      4: 'grid-cols-2',
+    };
+
+    return (
+      <div
+        className={`mt-3 grid gap-1.5 rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-800 bg-gray-100 dark:bg-gray-800 ${gridClasses[Math.min(count, 4)] || 'grid-cols-2'}`}
+      >
+        {media.slice(0, 4).map((url, i) => {
+          const isStr = typeof url === 'string';
+          const isVid = isStr && /\.(mp4|mov|avi|webm|mkv|ogg|wmv|flv)/i.test(url);
+          
+          // Layout logic for 3 images: first image takes full width if on top
+          const isFirstOfThree = count === 3 && i === 0;
+          const spanClass = isFirstOfThree ? 'col-span-2 aspect-[16/9]' : 'aspect-square';
+
+          return (
+            <div
+              key={i}
+              className={`relative cursor-pointer group/media overflow-hidden bg-gray-200 dark:bg-gray-700 ${spanClass}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMediaClick(i);
+              }}
+            >
+              {isVid ? (
+                <div className="w-full h-full">
+                  <video
+                    src={url}
+                    className="w-full h-full object-cover pointer-events-none group-hover/media:scale-[1.03] transition-transform duration-700"
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover/media:bg-black/40 transition-colors pointer-events-none">
+                    <div className="bg-white/20 backdrop-blur-md rounded-full w-12 h-12 flex items-center justify-center border border-white/30 shadow-xl scale-90 group-hover/media:scale-100 transition-transform duration-300">
+                      <span className="text-white text-xl ml-1 leading-none">▶</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-full h-full">
+                  <img
+                    src={isStr ? url : ''}
+                    alt=""
+                    className="w-full h-full object-cover group-hover/media:scale-[1.03] transition-transform duration-700 ease-out pointer-events-none"
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover/media:bg-black/10 transition-colors duration-300 flex items-center justify-center pointer-events-none">
+                    <span className="bg-white/80 dark:bg-black/60 backdrop-blur-md text-gray-900 dark:text-white text-[10px] font-bold px-2.5 py-1.5 rounded-full opacity-0 group-hover/media:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover/media:translate-y-0 shadow-lg uppercase tracking-wider">
+                      View Photo
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* +N overlay for 5th+ image */}
+              {i === 3 && count > 4 && (
+                <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center">
+                  <span className="text-white text-2xl font-bold">+{count - 4}</span>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
-    <>
-      <p className="mt-2 text-base text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words leading-relaxed">
-        {content &&
-          content.split(/(#\w+)/g).map((part, i) =>
-            /^#\w+$/.test(part) ? (
+    <div className="space-y-3">
+      {content && (
+        <p className="text-[15px] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
+          {content.split(/(#\w+)/g).map((part, i) =>
+            part.startsWith('#') ? (
               <Link
                 key={i}
-                to={`/hashtag/${part.slice(1).toLowerCase()}`}
-                className="text-brand-600 dark:text-brand-400 hover:underline font-medium"
+                to={`/hashtag/${part.slice(1)}`}
+                className="text-brand-600 hover:underline font-medium"
                 onClick={(e) => e.stopPropagation()}
               >
                 {part}
@@ -28,50 +100,17 @@ function PostContent({ content, media, onMediaClick }) {
               part
             )
           )}
-      </p>
-      {media && media.length > 0 && (
-        <div className={`mt-4 grid gap-2 ${media.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-          {media.map((url, i) =>
-            url.match(/\.(mp4|mov|avi|webm|mkv|ogg|wmv|flv)/i) ? (
-              <div
-                key={i}
-                className="relative cursor-pointer group rounded-2xl overflow-hidden shadow-sm"
-                onClick={() => onMediaClick(i)}
-              >
-                <video
-                  src={url}
-                  className="w-full object-cover max-h-80 pointer-events-none group-hover:scale-[1.02] transition-transform duration-500"
-                />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
-                  <div className="bg-white/20 backdrop-blur-md rounded-full w-14 h-14 flex items-center justify-center border border-white/30">
-                    <span className="text-white text-2xl ml-1 leading-none">▶</span>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div
-                key={i}
-                className="overflow-hidden rounded-2xl shadow-sm bg-gray-100 dark:bg-gray-800 max-h-80"
-              >
-                <img
-                  src={url}
-                  alt=""
-                  className="w-full cursor-pointer hover:scale-[1.02] transition-transform duration-500"
-                  onClick={() => onMediaClick(i)}
-                />
-              </div>
-            )
-          )}
-        </div>
+        </p>
       )}
-    </>
+      {renderMedia()}
+    </div>
   );
 }
 
 export default function PostCard({ post, onDelete }) {
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
-  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const openLightbox = useLightboxStore((s) => s.openLightbox);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
 
@@ -80,13 +119,14 @@ export default function PostCard({ post, onDelete }) {
   const isRepost = !!post.repost_id;
 
   const displayContent = isRepost ? post.orig_content : post.content;
-  const displayMedia = isRepost
-    ? Array.isArray(post.orig_media_urls)
-      ? post.orig_media_urls
-      : JSON.parse(post.orig_media_urls || '[]')
-    : Array.isArray(post.media_urls)
-      ? post.media_urls
-      : JSON.parse(post.media_urls || '[]');
+  const parseMedia = (val) => {
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string' && val.trim()) {
+      try { return JSON.parse(val); } catch (e) { return []; }
+    }
+    return [];
+  };
+  const displayMedia = isRepost ? parseMedia(post.orig_media_urls) : parseMedia(post.media_urls);
   const displayUser = isRepost
     ? {
         id: post.orig_user_id,
@@ -170,7 +210,7 @@ export default function PostCard({ post, onDelete }) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95 }}
         transition={{ duration: 0.3 }}
-        className="p-6 mb-6 bg-white/60 dark:bg-black/20 backdrop-blur-lg rounded-[2rem] border border-white/40 dark:border-white/5 shadow-soft hover:shadow-xl hover:bg-white/80 dark:hover:bg-black/30 hover:scale-[1.01] transition-all duration-300"
+        className="p-6 mb-6 bg-white/70 dark:bg-black/40 backdrop-blur-xl rounded-[2rem] border border-white/20 dark:border-white/10 shadow-soft hover:shadow-xl hover:bg-white/90 dark:hover:bg-black/50 hover:scale-[1.01] transition-all duration-300 relative z-10"
       >
         {/* Repost attribution header */}
         {isRepost && (
@@ -276,7 +316,7 @@ export default function PostCard({ post, onDelete }) {
               <PostContent
                 content={displayContent}
                 media={displayMedia}
-                onMediaClick={setLightboxIndex}
+                onMediaClick={(i) => openLightbox(post, i, displayMedia)}
               />
             )}
 
@@ -324,20 +364,6 @@ export default function PostCard({ post, onDelete }) {
           </div>
         </div>
       </motion.article>
-
-      <AnimatePresence>
-        {lightboxIndex !== null && (
-          <PostLightbox
-            post={post}
-            items={displayMedia}
-            index={lightboxIndex}
-            onClose={() => setLightboxIndex(null)}
-            onNav={setLightboxIndex}
-            toggleLike={toggleLike}
-            toggleRepost={toggleRepost}
-          />
-        )}
-      </AnimatePresence>
     </>
   );
 }

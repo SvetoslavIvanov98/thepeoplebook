@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
@@ -24,21 +25,54 @@ export default function PostLightbox({
   const [commentText, setCommentText] = useState('');
 
   const targetId = post?.repost_id ? post?.orig_id : post?.id;
-  const displayUser = post?.repost_id
+
+  const { data: latestPost } = useQuery({
+    queryKey: ['post', targetId],
+    queryFn: () => api.get(`/posts/${targetId}`).then((r) => r.data),
+    enabled: isOpen && !!targetId,
+    initialData: post,
+  });
+
+  const activePost = latestPost || post;
+
+  const displayUser = activePost?.repost_id
     ? {
-        id: post.orig_user_id,
-        username: post.orig_username,
-        full_name: post.orig_full_name,
-        avatar_url: post.orig_avatar_url,
-        is_verified: post.orig_is_verified,
+        id: activePost.orig_user_id,
+        username: activePost.orig_username,
+        full_name: activePost.orig_full_name,
+        avatar_url: activePost.orig_avatar_url,
+        is_verified: activePost.orig_is_verified,
       }
     : {
-        id: post?.user_id,
-        username: post?.username,
-        full_name: post?.full_name,
-        avatar_url: post?.avatar_url,
-        is_verified: post?.is_verified,
+        id: activePost?.user_id,
+        username: activePost?.username,
+        full_name: activePost?.full_name,
+        avatar_url: activePost?.avatar_url,
+        is_verified: activePost?.is_verified,
       };
+
+  const { mutate: internalToggleLike } = useMutation({
+    mutationFn: () => api.post(`/likes/post/${targetId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['feed'] });
+      qc.invalidateQueries({ queryKey: ['user-posts'] });
+      qc.invalidateQueries({ queryKey: ['post', targetId] });
+    },
+  });
+
+  const { mutate: internalToggleRepost } = useMutation({
+    mutationFn: () => api.post(`/posts/${targetId}/repost`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['feed'] });
+      qc.invalidateQueries({ queryKey: ['user-posts'] });
+      qc.invalidateQueries({ queryKey: ['post', targetId] });
+      toast.success(res.data.reposted ? 'Reposted!' : 'Repost removed');
+    },
+    onError: () => toast.error('Failed to repost'),
+  });
+
+  const handleLike = toggleLike || internalToggleLike;
+  const handleRepost = toggleRepost || internalToggleRepost;
 
   const { data: comments } = useQuery({
     queryKey: ['comments', targetId],
@@ -80,10 +114,10 @@ export default function PostLightbox({
     };
   }, [isOpen, onClose, prev, next]);
 
-  if (!isOpen || !post) return null;
+  if (!isOpen || !activePost) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex flex-col md:flex-row bg-black/95 md:bg-black/90 backdrop-blur-sm transition-all">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex flex-col md:flex-row bg-black/95 md:bg-black/98 backdrop-blur-md transition-all overflow-hidden">
       {/* Left: Media Area */}
       <div
         className="flex-1 relative flex items-center justify-center min-h-[40vh] md:min-h-screen"
@@ -130,6 +164,8 @@ export default function PostLightbox({
               src={url}
               controls
               autoPlay
+              muted
+              playsInline
               className="max-w-full max-h-full md:rounded-xl shadow-2xl bg-black"
             />
           ) : (
@@ -192,33 +228,33 @@ export default function PostLightbox({
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-gray-50/30 dark:bg-gray-900/10">
           {/* Post content */}
-          {post.content && (
+          {activePost.content && (
             <p className="text-[15px] text-gray-800 dark:text-gray-200 whitespace-pre-wrap leading-relaxed mb-4">
-              {post.content}
+              {activePost.content}
             </p>
           )}
 
           {/* Action Buttons */}
           <div className="flex items-center justify-around py-3 border-y border-gray-100 dark:border-gray-800 mb-6 bg-white dark:bg-gray-950 rounded-xl shadow-sm">
             <button
-              onClick={() => toggleLike && toggleLike()}
-              className={`flex items-center gap-2 transition-colors font-semibold text-sm px-4 py-2 rounded-lg ${post.liked_by_me ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+              onClick={() => handleLike && handleLike()}
+              className={`flex items-center gap-2 transition-colors font-semibold text-sm px-4 py-2 rounded-lg ${activePost.liked_by_me ? 'text-red-500 bg-red-50 dark:bg-red-500/10' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
             >
-              <span>{post.liked_by_me ? '❤️' : '🤍'}</span>
-              <span>{post.likes_count > 0 ? post.likes_count : 'Like'}</span>
+              <span>{activePost.liked_by_me ? '❤️' : '🤍'}</span>
+              <span>{activePost.likes_count > 0 ? activePost.likes_count : 'Like'}</span>
             </button>
 
             <button className="flex items-center gap-2 text-gray-600 dark:text-gray-400 transition-colors font-semibold text-sm px-4 py-2 rounded-lg cursor-default">
               <span>💬</span>
-              <span>{post.comments_count > 0 ? post.comments_count : 'Comment'}</span>
+              <span>{activePost.comments_count > 0 ? activePost.comments_count : 'Comment'}</span>
             </button>
 
             <button
-              onClick={() => toggleRepost && toggleRepost()}
-              className={`flex items-center gap-2 transition-colors font-semibold text-sm px-4 py-2 rounded-lg ${post.has_reposted ? 'text-green-500 bg-green-50 dark:bg-green-500/10' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+              onClick={() => handleRepost && handleRepost()}
+              className={`flex items-center gap-2 transition-colors font-semibold text-sm px-4 py-2 rounded-lg ${activePost.has_reposted ? 'text-green-500 bg-green-50 dark:bg-green-500/10' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
             >
               <span>🔁</span>
-              <span>{post.reposts_count > 0 ? post.reposts_count : 'Repost'}</span>
+              <span>{activePost.reposts_count > 0 ? activePost.reposts_count : 'Repost'}</span>
             </button>
           </div>
 
@@ -308,6 +344,7 @@ export default function PostLightbox({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

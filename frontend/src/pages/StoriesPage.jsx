@@ -106,6 +106,7 @@ function StoryViewer({ groups, initialIndex, onClose, onDelete, currentUserId })
               src={mediaUrl}
               className="max-h-full max-w-full object-contain"
               autoPlay
+              muted
               playsInline
               onEnded={goNext}
             />

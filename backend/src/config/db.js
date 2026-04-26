@@ -1,6 +1,7 @@
 const prisma = require('./prisma');
 
 module.exports = {
+  pool: prisma.pool,
   query: async (text, params) => {
     // Temporary wrapper to keep legacy pg code working during migration
     // Convert $1, $2 to prisma parameters...
