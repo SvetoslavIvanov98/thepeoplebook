@@ -7,6 +7,12 @@ const AppError = require('../utils/AppError');
 const MIN_AGE_YEARS = 16;
 
 /**
+ * Safe columns to return to the client — prevents leaking sensitive fields.
+ */
+const SAFE_USER_COLUMNS = `id, username, email, full_name, avatar_url, cover_url, bio, is_verified, role, is_banned, created_at,
+                           followers_count, following_count`;
+
+/**
  * Signs a short-lived access token.
  */
 const signToken = (userId) =>
@@ -37,6 +43,13 @@ const storeRefreshToken = async (userId, token) => {
     'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
     [userId, hashToken(token), expiresAt]
   );
+};
+
+/**
+ * Revoke all refresh tokens for a user (used on ban, password change, etc.)
+ */
+const revokeAllTokens = async (userId) => {
+  await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
 };
 
 /**
@@ -84,13 +97,24 @@ const registerUser = async (userData) => {
 
 /**
  * Authenticates a user and returns tokens.
+ * Uses explicit column list to avoid leaking sensitive fields.
  */
 const loginUser = async (email, password) => {
-  const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+  const result = await db.query(
+    `SELECT id, username, email, full_name, avatar_url, cover_url, bio,
+            is_verified, role, is_banned, created_at, password_hash,
+            followers_count, following_count
+     FROM users WHERE email = $1`,
+    [email]
+  );
   const user = result.rows[0];
 
   if (!user || !user.password_hash) {
     throw new AppError('Invalid credentials', 401);
+  }
+
+  if (user.is_banned) {
+    throw new AppError('Your account has been suspended', 403);
   }
 
   const valid = await bcrypt.compare(password, user.password_hash);
@@ -105,11 +129,40 @@ const loginUser = async (email, password) => {
   return { user: safeUser, token: signToken(user.id), refreshToken };
 };
 
+/**
+ * Change a user's password and revoke all existing sessions.
+ */
+const changePassword = async (userId, currentPassword, newPassword) => {
+  const result = await db.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+  const user = result.rows[0];
+
+  if (!user || !user.password_hash) {
+    throw new AppError('Password change not available for OAuth accounts', 400);
+  }
+
+  const valid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!valid) {
+    throw new AppError('Current password is incorrect', 401);
+  }
+
+  const hash = await bcrypt.hash(newPassword, 12);
+  await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
+    hash,
+    userId,
+  ]);
+
+  // Revoke all existing sessions for security
+  await revokeAllTokens(userId);
+};
+
 module.exports = {
+  SAFE_USER_COLUMNS,
   registerUser,
   loginUser,
+  changePassword,
   signToken,
   signRefresh,
   hashToken,
   storeRefreshToken,
+  revokeAllTokens,
 };

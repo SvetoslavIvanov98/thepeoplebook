@@ -7,6 +7,7 @@ const passport = require('passport');
 const path = require('path');
 const logger = require('./utils/logger');
 const AppError = require('./utils/AppError');
+const { requestLogger } = require('./middleware/requestLogger.middleware');
 
 require('./config/passport');
 
@@ -69,6 +70,9 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(cookieParser());
 
+// Request logging — structured logging via Winston
+app.use(requestLogger);
+
 // Passport
 app.use(passport.initialize());
 
@@ -96,8 +100,42 @@ if (!process.env.LINODE_S3_BUCKET) {
   app.use('/uploads', express.static(uploadDir));
 }
 
-// Health check
-app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// Deep health check — verifies DB and Redis connectivity
+app.get('/health', async (_req, res) => {
+  const health = { status: 'ok', timestamp: new Date().toISOString() };
+  const checks = {};
+
+  // Check database
+  try {
+    const db = require('./config/db');
+    const start = Date.now();
+    await db.query('SELECT 1');
+    checks.database = { status: 'ok', latency: `${Date.now() - start}ms` };
+  } catch (err) {
+    checks.database = { status: 'error', message: err.message };
+    health.status = 'degraded';
+  }
+
+  // Check Redis
+  try {
+    const redis = require('./config/redis');
+    if (redis.isReady) {
+      const start = Date.now();
+      await redis.ping();
+      checks.redis = { status: 'ok', latency: `${Date.now() - start}ms` };
+    } else {
+      checks.redis = { status: 'disconnected' };
+      health.status = 'degraded';
+    }
+  } catch (err) {
+    checks.redis = { status: 'error', message: err.message };
+    health.status = 'degraded';
+  }
+
+  health.checks = checks;
+  const statusCode = health.status === 'ok' ? 200 : 503;
+  res.status(statusCode).json(health);
+});
 
 // Global error handler
 app.use((err, _req, res, _next) => {

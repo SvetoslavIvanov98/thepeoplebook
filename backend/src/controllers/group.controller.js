@@ -9,16 +9,20 @@ const createGroup = async (req, res, next) => {
       return res.status(400).json({ error: 'privacy must be public or private' });
     const cover_url = req.file ? req.file.location : null;
 
-    const result = await db.query(
-      'INSERT INTO groups (name, description, cover_url, owner_id, privacy) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [name, description || null, cover_url, req.user.id, privacy]
-    );
-    const group = result.rows[0];
-    await db.query('INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)', [
-      group.id,
-      req.user.id,
-      'admin',
-    ]);
+    // Use transaction: create group + add owner as admin atomically
+    const group = await db.withTransaction(async (client) => {
+      const result = await client.query(
+        'INSERT INTO groups (name, description, cover_url, owner_id, privacy) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+        [name, description || null, cover_url, req.user.id, privacy]
+      );
+      const g = result.rows[0];
+      await client.query(
+        'INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)',
+        [g.id, req.user.id, 'admin']
+      );
+      return g;
+    });
+
     res.status(201).json(group);
   } catch (err) {
     next(err);
@@ -331,6 +335,11 @@ async function inviteToGroup(req, res, next) {
     if (user_ids.length > 20)
       return res.status(400).json({ error: 'Cannot invite more than 20 users at once' });
 
+    // Validate all user_ids are integers
+    if (!user_ids.every((uid) => Number.isInteger(uid) && uid > 0)) {
+      return res.status(400).json({ error: 'All user_ids must be positive integers' });
+    }
+
     // Inviter must be a member
     const member = await db.query(
       'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2',
@@ -342,19 +351,25 @@ async function inviteToGroup(req, res, next) {
     const group = await db.query('SELECT id, name FROM groups WHERE id = $1', [id]);
     if (!group.rows[0]) return res.status(404).json({ error: 'Group not found' });
 
-    const results = [];
-    for (const uid of user_ids) {
-      // Skip if already a member
-      const alreadyMember = await db.query(
-        'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2',
-        [id, uid]
-      );
-      if (alreadyMember.rows[0]) {
-        results.push({ user_id: uid, status: 'already_member' });
-        continue;
-      }
+    // Batch check: find which user_ids are already members
+    const existingMembers = await db.query(
+      'SELECT user_id FROM group_members WHERE group_id = $1 AND user_id = ANY($2::int[])',
+      [id, user_ids]
+    );
+    const memberSet = new Set(existingMembers.rows.map((r) => r.user_id));
 
-      // Upsert invite (reset to pending if previously declined)
+    const results = [];
+    const toInvite = user_ids.filter((uid) => !memberSet.has(uid));
+
+    // Mark already-members
+    for (const uid of user_ids) {
+      if (memberSet.has(uid)) {
+        results.push({ user_id: uid, status: 'already_member' });
+      }
+    }
+
+    // Batch invite the rest
+    for (const uid of toInvite) {
       await db.query(
         `INSERT INTO group_invites (group_id, inviter_id, invitee_id, status)
          VALUES ($1, $2, $3, 'pending')

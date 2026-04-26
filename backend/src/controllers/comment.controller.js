@@ -7,7 +7,7 @@ const getComments = async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const offset = parseInt(req.query.offset) || 0;
     const result = await db.query(
-      `SELECT c.id, c.content, c.created_at, c.parent_id,
+      `SELECT c.id, c.content, c.created_at, c.edited_at, c.parent_id,
               u.id AS user_id, u.username, u.full_name, u.avatar_url,
               c.likes_count
        FROM comments c JOIN users u ON u.id = c.user_id
@@ -37,11 +37,31 @@ const addComment = async (req, res, next) => {
 
     if (post.rows[0].user_id !== req.user.id) {
       await emitNotification(post.rows[0].user_id, {
-        type: 'comment', actor_id: req.user.id, post_id: postId, comment_id: result.rows[0].id,
+        type: 'comment',
+        actor_id: req.user.id,
+        post_id: postId,
+        comment_id: result.rows[0].id,
       });
     }
 
     res.status(201).json(result.rows[0]);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/comments/:id — edit a comment
+const editComment = async (req, res, next) => {
+  try {
+    const { content } = req.body;
+    const result = await db.query(
+      `UPDATE comments SET content = $1, edited_at = NOW()
+       WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
+       RETURNING id, content, edited_at`,
+      [content, req.params.id, req.user.id]
+    );
+    if (!result.rows[0]) return res.status(403).json({ error: 'Not allowed' });
+    res.json(result.rows[0]);
   } catch (err) {
     next(err);
   }
@@ -60,4 +80,4 @@ const deleteComment = async (req, res, next) => {
   }
 };
 
-module.exports = { getComments, addComment, deleteComment };
+module.exports = { getComments, addComment, editComment, deleteComment };

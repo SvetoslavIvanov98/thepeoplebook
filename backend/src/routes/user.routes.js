@@ -11,11 +11,24 @@ const {
   getSuggestedUsers,
   getUserPosts,
   deleteAccount,
+  updatePassword,
   exportMyData,
 } = require('../controllers/user.controller');
 
 router.get('/suggested', authenticate, cache(300), getSuggestedUsers);
 router.get('/me/export', authenticate, exportMyData);
+router.patch(
+  '/me/password',
+  authenticate,
+  [
+    body('current_password').notEmpty().withMessage('Current password is required'),
+    body('new_password')
+      .isLength({ min: 8 })
+      .withMessage('New password must be at least 8 characters'),
+    validate,
+  ],
+  updatePassword
+);
 router.get('/:username', optionalAuth, cache(60), getProfile);
 router.get('/:username/posts', optionalAuth, cache(30), getUserPosts);
 router.patch(

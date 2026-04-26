@@ -83,7 +83,7 @@ const wrapUpload = (multerMiddleware) => (req, res, next) => {
   multerMiddleware(req, res, async (err) => {
     if (err) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        const limitMb = parseInt(process.env.MAX_FILE_SIZE_MB) || 500;
+        const limitMb = parseInt(process.env.MAX_FILE_SIZE_MB) || 200;
         return res
           .status(413)
           .json({ error: `File too large. Maximum allowed size is ${limitMb}MB.` });

@@ -13,20 +13,26 @@ const toggleBlock = async (req, res, next) => {
     );
 
     if (existing.rows[0]) {
-      await db.query('DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2', [blockerId, blockedId]);
+      await db.query('DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2', [
+        blockerId,
+        blockedId,
+      ]);
       return res.json({ blocked: false });
     }
 
-    await db.query(
-      'INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [blockerId, blockedId]
-    );
+    // Use transaction: insert block + remove follow relationships atomically
+    await db.withTransaction(async (client) => {
+      await client.query(
+        'INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [blockerId, blockedId]
+      );
 
-    // Remove any follow relationships in both directions when blocking
-    await db.query(
-      'DELETE FROM follows WHERE (follower_id = $1 AND following_id = $2) OR (follower_id = $2 AND following_id = $1)',
-      [blockerId, blockedId]
-    );
+      // Remove any follow relationships in both directions when blocking
+      await client.query(
+        'DELETE FROM follows WHERE (follower_id = $1 AND following_id = $2) OR (follower_id = $2 AND following_id = $1)',
+        [blockerId, blockedId]
+      );
+    });
 
     res.json({ blocked: true });
   } catch (err) {
@@ -47,7 +53,10 @@ const toggleMute = async (req, res, next) => {
     );
 
     if (existing.rows[0]) {
-      await db.query('DELETE FROM user_mutes WHERE muter_id = $1 AND muted_id = $2', [muterId, mutedId]);
+      await db.query('DELETE FROM user_mutes WHERE muter_id = $1 AND muted_id = $2', [
+        muterId,
+        mutedId,
+      ]);
       return res.json({ muted: false });
     }
 

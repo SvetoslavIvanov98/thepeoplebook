@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import api from '../services/api';
 import { useAuthStore } from '../store/auth.store';
@@ -120,11 +120,24 @@ export default function ProfilePage({ user }) {
     }
   };
 
-  const { data: followList, isFetching: followFetching } = useQuery({
+  const {
+    data: followData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isFetching: followFetching,
+  } = useInfiniteQuery({
     queryKey: ['follow-list', profile?.id, followModal],
-    queryFn: () => api.get(`/follows/${profile.id}/${followModal}`).then((r) => r.data),
+    queryFn: ({ pageParam = null }) =>
+      api
+        .get(`/follows/${profile.id}/${followModal}${pageParam ? `?cursor=${pageParam}` : ''}`)
+        .then((r) => r.data),
+    getNextPageParam: (lastPage) =>
+      lastPage.length === 20 ? lastPage[lastPage.length - 1].created_at : undefined,
     enabled: !!profile && !!followModal,
   });
+
+  const followList = followData?.pages?.flat() || [];
 
   if (isPending) return <div className="p-8 text-center text-gray-400">Loading…</div>;
   if (isError)
@@ -450,6 +463,18 @@ export default function ProfilePage({ user }) {
                     </div>
                   </motion.div>
                 ))}
+
+                {hasNextPage && (
+                  <div className="py-4 text-center">
+                    <button
+                      onClick={() => fetchNextPage()}
+                      disabled={isFetchingNextPage}
+                      className="text-sm font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 dark:bg-brand-900/20 dark:hover:bg-brand-900/40 px-4 py-2 rounded-full transition-colors"
+                    >
+                      {isFetchingNextPage ? 'Loading...' : 'Load more'}
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>

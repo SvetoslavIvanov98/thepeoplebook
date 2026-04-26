@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const { emitNotification } = require('../services/notification.service');
 const { sanitizeLike } = require('../utils/sanitize');
+const { revokeAllTokens } = require('../services/auth.service');
 
 // GET /api/admin/stats
 const getStats = async (req, res, next) => {
@@ -111,11 +112,24 @@ const setBan = async (req, res, next) => {
     if (parseInt(id, 10) === req.user.id) {
       return res.status(400).json({ error: 'Cannot ban yourself' });
     }
+
+    // Prevent banning other admins
+    const target = await db.query('SELECT role FROM users WHERE id = $1', [id]);
+    if (!target.rows[0]) return res.status(404).json({ error: 'User not found' });
+    if (target.rows[0].role === 'admin' && banned) {
+      return res.status(400).json({ error: 'Cannot ban another admin' });
+    }
+
     const result = await db.query(
       'UPDATE users SET is_banned = $1 WHERE id = $2 RETURNING id, username, is_banned',
       [banned, id]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'User not found' });
+
+    // Revoke all sessions when banning so the user is immediately logged out
+    if (banned) {
+      await revokeAllTokens(parseInt(id, 10));
+    }
+
     res.json(result.rows[0]);
   } catch (err) {
     next(err);
@@ -169,10 +183,16 @@ const deletePost = async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await db.query(
-      'UPDATE posts SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id',
+      'UPDATE posts SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id, user_id',
       [id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Post not found' });
+
+    // Update the post owner's denormalized post_count
+    await db.query('UPDATE users SET post_count = GREATEST(0, post_count - 1) WHERE id = $1', [
+      result.rows[0].user_id,
+    ]);
+
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -279,77 +299,94 @@ const getReports = async (req, res, next) => {
 };
 
 // POST /api/admin/reports/:id/resolve  { action_type, reason, legal_basis, dismiss }
+// Wrapped in a transaction for atomicity
 const resolveReport = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { action_type, reason, legal_basis, dismiss } = req.body;
 
-    const report = await db.query('SELECT * FROM content_reports WHERE id = $1', [id]);
-    if (!report.rows[0]) return res.status(404).json({ error: 'Report not found' });
-    if (report.rows[0].status !== 'pending') {
-      return res.status(400).json({ error: 'Report has already been resolved' });
-    }
+    const result = await db.withTransaction(async (client) => {
+      const report = await client.query('SELECT * FROM content_reports WHERE id = $1', [id]);
+      if (!report.rows[0]) return { status: 404, error: 'Report not found' };
+      if (report.rows[0].status !== 'pending') {
+        return { status: 400, error: 'Report has already been resolved' };
+      }
 
-    const rpt = report.rows[0];
+      const rpt = report.rows[0];
 
-    if (dismiss) {
-      await db.query(
-        `UPDATE content_reports SET status = 'dismissed', admin_note = $1, decided_by = $2, decided_at = NOW()
-         WHERE id = $3`,
-        [reason || null, req.user.id, id]
+      if (dismiss) {
+        await client.query(
+          `UPDATE content_reports SET status = 'dismissed', admin_note = $1, decided_by = $2, decided_at = NOW()
+           WHERE id = $3`,
+          [reason || null, req.user.id, id]
+        );
+        return { success: true, status: 'dismissed' };
+      }
+
+      // Determine the target user
+      let targetUserId;
+      if (rpt.post_id) {
+        const p = await client.query('SELECT user_id FROM posts WHERE id = $1', [rpt.post_id]);
+        targetUserId = p.rows[0]?.user_id;
+      } else if (rpt.comment_id) {
+        const c = await client.query('SELECT user_id FROM comments WHERE id = $1', [
+          rpt.comment_id,
+        ]);
+        targetUserId = c.rows[0]?.user_id;
+      } else if (rpt.reported_user_id) {
+        targetUserId = rpt.reported_user_id;
+      }
+
+      if (!targetUserId) return { status: 400, error: 'Could not determine target user' };
+
+      const validActions = ['content_removed', 'account_suspended', 'warning', 'no_action'];
+      if (!validActions.includes(action_type)) {
+        return { status: 400, error: `action_type must be one of: ${validActions.join(', ')}` };
+      }
+      if (!reason) return { status: 400, error: 'reason is required' };
+
+      // Apply the action
+      if (action_type === 'content_removed') {
+        if (rpt.post_id)
+          await client.query('UPDATE posts SET deleted_at = NOW() WHERE id = $1', [rpt.post_id]);
+        if (rpt.comment_id)
+          await client.query('UPDATE comments SET deleted_at = NOW() WHERE id = $1', [
+            rpt.comment_id,
+          ]);
+      } else if (action_type === 'account_suspended') {
+        await client.query('UPDATE users SET is_banned = TRUE WHERE id = $1', [targetUserId]);
+        // Revoke all sessions so the ban takes effect immediately
+        await revokeAllTokens(targetUserId);
+      }
+
+      // Create statement of reasons (DSA Art. 17)
+      await client.query(
+        `INSERT INTO moderation_decisions (report_id, target_user_id, action_type, reason, legal_basis, decided_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, targetUserId, action_type, reason, legal_basis || null, req.user.id]
       );
-      return res.json({ success: true, status: 'dismissed' });
+
+      await client.query(
+        `UPDATE content_reports SET status = 'action_taken', admin_note = $1, decided_by = $2, decided_at = NOW()
+         WHERE id = $3`,
+        [reason, req.user.id, id]
+      );
+
+      return { success: true, status: 'action_taken', action_type, targetUserId };
+    });
+
+    // Handle validation errors returned from inside the transaction
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
     }
-
-    // Determine the target user
-    let targetUserId;
-    if (rpt.post_id) {
-      const p = await db.query('SELECT user_id FROM posts WHERE id = $1', [rpt.post_id]);
-      targetUserId = p.rows[0]?.user_id;
-    } else if (rpt.comment_id) {
-      const c = await db.query('SELECT user_id FROM comments WHERE id = $1', [rpt.comment_id]);
-      targetUserId = c.rows[0]?.user_id;
-    } else if (rpt.reported_user_id) {
-      targetUserId = rpt.reported_user_id;
-    }
-
-    if (!targetUserId) return res.status(400).json({ error: 'Could not determine target user' });
-
-    const validActions = ['content_removed', 'account_suspended', 'warning', 'no_action'];
-    if (!validActions.includes(action_type)) {
-      return res
-        .status(400)
-        .json({ error: `action_type must be one of: ${validActions.join(', ')}` });
-    }
-    if (!reason) return res.status(400).json({ error: 'reason is required' });
-
-    // Apply the action
-    if (action_type === 'content_removed') {
-      if (rpt.post_id)
-        await db.query('UPDATE posts SET deleted_at = NOW() WHERE id = $1', [rpt.post_id]);
-      if (rpt.comment_id)
-        await db.query('UPDATE comments SET deleted_at = NOW() WHERE id = $1', [rpt.comment_id]);
-    } else if (action_type === 'account_suspended') {
-      await db.query('UPDATE users SET is_banned = TRUE WHERE id = $1', [targetUserId]);
-    }
-
-    // Create statement of reasons (DSA Art. 17)
-    await db.query(
-      `INSERT INTO moderation_decisions (report_id, target_user_id, action_type, reason, legal_basis, decided_by)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, targetUserId, action_type, reason, legal_basis || null, req.user.id]
-    );
-
-    await db.query(
-      `UPDATE content_reports SET status = 'action_taken', admin_note = $1, decided_by = $2, decided_at = NOW()
-       WHERE id = $3`,
-      [reason, req.user.id, id]
-    );
 
     // Notify the target user about the moderation decision (DSA Art. 17)
-    await emitNotification(targetUserId, { type: 'moderation_decision', actor_id: null });
+    // Done outside the transaction so it doesn't block the response
+    if (result.targetUserId) {
+      await emitNotification(result.targetUserId, { type: 'moderation_decision', actor_id: null });
+    }
 
-    res.json({ success: true, status: 'action_taken', action_type });
+    res.json({ success: result.success, status: result.status, action_type: result.action_type });
   } catch (err) {
     next(err);
   }
@@ -393,6 +430,7 @@ const getAppeals = async (req, res, next) => {
 };
 
 // POST /api/admin/appeals/:id/resolve  { outcome: 'upheld' | 'overturned', note }
+// Wrapped in a transaction for atomicity
 const resolveAppeal = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -402,40 +440,52 @@ const resolveAppeal = async (req, res, next) => {
       return res.status(400).json({ error: 'outcome must be upheld or overturned' });
     }
 
-    const decision = await db.query(
-      'SELECT * FROM moderation_decisions WHERE id = $1 AND appealed = TRUE',
-      [id]
-    );
-    if (!decision.rows[0]) return res.status(404).json({ error: 'Appeal not found' });
-    if (decision.rows[0].appeal_outcome) {
-      return res.status(400).json({ error: 'Appeal already resolved' });
-    }
-
-    // If overturning, reverse the action
-    if (outcome === 'overturned') {
-      const d = decision.rows[0];
-      if (d.action_type === 'content_removed' && d.report_id) {
-        const rpt = await db.query(
-          'SELECT post_id, comment_id FROM content_reports WHERE id = $1',
-          [d.report_id]
-        );
-        if (rpt.rows[0]?.post_id)
-          await db.query('UPDATE posts SET deleted_at = NULL WHERE id = $1', [rpt.rows[0].post_id]);
-        if (rpt.rows[0]?.comment_id)
-          await db.query('UPDATE comments SET deleted_at = NULL WHERE id = $1', [
-            rpt.rows[0].comment_id,
-          ]);
-      } else if (d.action_type === 'account_suspended') {
-        await db.query('UPDATE users SET is_banned = FALSE WHERE id = $1', [d.target_user_id]);
+    const result = await db.withTransaction(async (client) => {
+      const decision = await client.query(
+        'SELECT * FROM moderation_decisions WHERE id = $1 AND appealed = TRUE',
+        [id]
+      );
+      if (!decision.rows[0]) return { status: 404, error: 'Appeal not found' };
+      if (decision.rows[0].appeal_outcome) {
+        return { status: 400, error: 'Appeal already resolved' };
       }
+
+      // If overturning, reverse the action
+      if (outcome === 'overturned') {
+        const d = decision.rows[0];
+        if (d.action_type === 'content_removed' && d.report_id) {
+          const rpt = await client.query(
+            'SELECT post_id, comment_id FROM content_reports WHERE id = $1',
+            [d.report_id]
+          );
+          if (rpt.rows[0]?.post_id)
+            await client.query('UPDATE posts SET deleted_at = NULL WHERE id = $1', [
+              rpt.rows[0].post_id,
+            ]);
+          if (rpt.rows[0]?.comment_id)
+            await client.query('UPDATE comments SET deleted_at = NULL WHERE id = $1', [
+              rpt.rows[0].comment_id,
+            ]);
+        } else if (d.action_type === 'account_suspended') {
+          await client.query('UPDATE users SET is_banned = FALSE WHERE id = $1', [
+            d.target_user_id,
+          ]);
+        }
+      }
+
+      const updated = await client.query(
+        `UPDATE moderation_decisions SET appeal_outcome = $1, appeal_note = COALESCE($2, appeal_note)
+         WHERE id = $3 RETURNING id, appeal_outcome`,
+        [outcome, note || null, id]
+      );
+      return { data: updated.rows[0] };
+    });
+
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
     }
 
-    const result = await db.query(
-      `UPDATE moderation_decisions SET appeal_outcome = $1, appeal_note = COALESCE($2, appeal_note)
-       WHERE id = $3 RETURNING id, appeal_outcome`,
-      [outcome, note || null, id]
-    );
-    res.json(result.rows[0]);
+    res.json(result.data);
   } catch (err) {
     next(err);
   }

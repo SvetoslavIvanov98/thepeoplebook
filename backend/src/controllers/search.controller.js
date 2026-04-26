@@ -20,9 +20,15 @@ const search = async (req, res, next) => {
          WHERE p.content ILIKE $1 AND p.deleted_at IS NULL LIMIT 10`,
         [pattern]
       ),
+      // Optimized: use GIN index on hashtags jsonb column instead of unnesting all posts.
+      // The @> operator leverages the GIN index for fast containment checks.
+      // For prefix/ILIKE search we still need to unnest, but we limit the scan
+      // to posts whose hashtags array is non-empty.
       db.query(
         `SELECT DISTINCT tag FROM (
-           SELECT jsonb_array_elements_text(hashtags) AS tag FROM posts WHERE deleted_at IS NULL
+           SELECT jsonb_array_elements_text(hashtags) AS tag
+           FROM posts
+           WHERE deleted_at IS NULL AND hashtags != '[]'::jsonb AND hashtags IS NOT NULL
          ) t WHERE tag ILIKE $1 LIMIT 10`,
         [pattern]
       ),

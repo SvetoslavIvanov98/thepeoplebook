@@ -1,6 +1,8 @@
 const db = require('../config/db');
 const { deleteS3Object } = require('../config/s3');
 const { invalidateCache } = require('../middleware/cache.middleware');
+const { changePassword } = require('../services/auth.service');
+const { buildPostQuery } = require('../models/post.model');
 
 const getProfile = async (req, res, next) => {
   try {
@@ -103,31 +105,24 @@ const getUserPosts = async (req, res, next) => {
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const offset = parseInt(req.query.offset) || 0;
 
-    const result = await db.query(
-      `SELECT p.id, p.content, p.media_urls, p.hashtags, p.created_at, p.repost_id,
-              u.id AS user_id, u.username, u.full_name, u.avatar_url, u.is_verified,
-              COALESCE(op.likes_count, p.likes_count) AS likes_count,
-              COALESCE(op.comments_count, p.comments_count) AS comments_count,
-              COALESCE(op.reposts_count, p.reposts_count) AS reposts_count,
-              op.id AS orig_id, op.content AS orig_content, op.media_urls AS orig_media_urls,
-              op.created_at AS orig_created_at,
-              ou.id AS orig_user_id, ou.username AS orig_username, ou.full_name AS orig_full_name,
-              ou.avatar_url AS orig_avatar_url, ou.is_verified AS orig_is_verified
-       FROM posts p
-       JOIN users u ON u.id = p.user_id
-       LEFT JOIN posts op ON op.id = p.repost_id AND op.deleted_at IS NULL
-       LEFT JOIN users ou ON ou.id = op.user_id
-       WHERE u.username = $1 AND p.deleted_at IS NULL
-       ORDER BY p.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [username, limit, offset]
-    );
+    const query =
+      buildPostQuery({
+        where: 'AND u.username = $1',
+        userId: req.user?.id,
+        userParamRef: '$4',
+        limitRef: '$2',
+      }) + ` OFFSET $3`;
+
+    const params = req.user ? [username, limit, offset, req.user.id] : [username, limit, offset];
+
+    const result = await db.query(query, params);
     res.json(result.rows);
   } catch (err) {
     next(err);
   }
 };
 
+// DELETE /api/users/me — wrapped in transaction for atomicity
 const deleteAccount = async (req, res, next) => {
   try {
     const { password } = req.body;
@@ -144,10 +139,26 @@ const deleteAccount = async (req, res, next) => {
       if (!valid) return res.status(401).json({ error: 'Incorrect password' });
     }
 
-    // Delete user — cascade removes posts, follows, likes, comments, tokens, etc.
-    await db.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+    // Delete user inside a transaction — cascade removes posts, follows, likes, comments, tokens, etc.
+    await db.withTransaction(async (client) => {
+      await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [req.user.id]);
+      await client.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+    });
+
     res.clearCookie('refresh_token', { path: '/' });
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/users/me/password — change password
+const updatePassword = async (req, res, next) => {
+  try {
+    const { current_password, new_password } = req.body;
+    await changePassword(req.user.id, current_password, new_password);
+    res.clearCookie('refresh_token', { path: '/' });
+    res.json({ success: true, message: 'Password changed. Please log in again.' });
   } catch (err) {
     next(err);
   }
@@ -245,5 +256,6 @@ module.exports = {
   getSuggestedUsers,
   getUserPosts,
   deleteAccount,
+  updatePassword,
   exportMyData,
 };

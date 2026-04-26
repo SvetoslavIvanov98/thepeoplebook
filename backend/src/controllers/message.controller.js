@@ -4,19 +4,27 @@ const { sendPush } = require('../services/push.service');
 
 const getConversations = async (req, res, next) => {
   try {
+    // Optimized: use LATERAL joins instead of correlated subqueries to avoid O(n²)
     const result = await db.query(
       `SELECT c.id, c.created_at,
               u.id AS partner_id, u.username AS partner_username, u.full_name AS partner_name,
               u.avatar_url AS partner_avatar,
-              (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message,
-              (SELECT created_at FROM messages WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1) AS last_message_at,
-              (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id AND read = FALSE AND sender_id != $1) AS unread_count
+              lm.content AS last_message,
+              lm.created_at AS last_message_at,
+              COALESCE(uc.cnt, 0) AS unread_count
        FROM conversations c
-       JOIN conversation_participants cp ON cp.conversation_id = c.id
+       JOIN conversation_participants cp ON cp.conversation_id = c.id AND cp.user_id = $1
        JOIN conversation_participants cp2 ON cp2.conversation_id = c.id AND cp2.user_id != $1
        JOIN users u ON u.id = cp2.user_id
-       WHERE cp.user_id = $1
-       ORDER BY last_message_at DESC NULLS LAST`,
+       LEFT JOIN LATERAL (
+         SELECT content, created_at FROM messages
+         WHERE conversation_id = c.id ORDER BY created_at DESC LIMIT 1
+       ) lm ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS cnt FROM messages
+         WHERE conversation_id = c.id AND read = FALSE AND sender_id != $1
+       ) uc ON TRUE
+       ORDER BY lm.created_at DESC NULLS LAST`,
       [req.user.id]
     );
     res.json(result.rows);
@@ -25,6 +33,7 @@ const getConversations = async (req, res, next) => {
   }
 };
 
+// Wrapped in transaction: creates conversation + two participants atomically
 const getOrCreateConversation = async (req, res, next) => {
   try {
     const { userId } = req.params;
@@ -40,12 +49,16 @@ const getOrCreateConversation = async (req, res, next) => {
 
     if (existing.rows[0]) return res.json({ id: existing.rows[0].id });
 
-    const conv = await db.query('INSERT INTO conversations DEFAULT VALUES RETURNING id');
-    const convId = conv.rows[0].id;
-    await db.query(
-      'INSERT INTO conversation_participants (conversation_id, user_id) VALUES ($1, $2), ($1, $3)',
-      [convId, req.user.id, userId]
-    );
+    const convId = await db.withTransaction(async (client) => {
+      const conv = await client.query('INSERT INTO conversations DEFAULT VALUES RETURNING id');
+      const id = conv.rows[0].id;
+      await client.query(
+        'INSERT INTO conversation_participants (conversation_id, user_id) VALUES ($1, $2), ($1, $3)',
+        [id, req.user.id, userId]
+      );
+      return id;
+    });
+
     res.status(201).json({ id: convId });
   } catch (err) {
     next(err);
@@ -104,6 +117,11 @@ const sendMessage = async (req, res, next) => {
     const { content } = req.body;
     const media_url = req.file?.location ?? null;
 
+    // Validate: must have either content or media
+    if (!content && !media_url) {
+      return res.status(400).json({ error: 'Message must have content or media' });
+    }
+
     const member = await db.query(
       'SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
       [conversationId, req.user.id]
@@ -116,16 +134,16 @@ const sendMessage = async (req, res, next) => {
     );
 
     const msg = result.rows[0];
+
+    // Fetch other participants once (eliminated duplicate query)
+    const others = await db.query(
+      'SELECT user_id FROM conversation_participants WHERE conversation_id = $1 AND user_id != $2',
+      [conversationId, req.user.id]
+    );
+
     const io = getIO();
     if (io) {
-      // Emit to recipient's personal room (works whether or not they have the chat open)
-      const others = await db.query(
-        'SELECT user_id FROM conversation_participants WHERE conversation_id = $1 AND user_id != $2',
-        [conversationId, req.user.id]
-      );
-      others.rows.forEach(({ user_id }) =>
-        io.to(`user:${user_id}`).emit('new_message', msg)
-      );
+      others.rows.forEach(({ user_id }) => io.to(`user:${user_id}`).emit('new_message', msg));
       // Also emit to the conv room so the sender's socket sees it (dedup handled on frontend)
       io.to(`conv:${conversationId}`).emit('new_message', msg);
     }
@@ -133,16 +151,12 @@ const sendMessage = async (req, res, next) => {
     // Send push notification to other participants
     const sender = await db.query('SELECT username FROM users WHERE id = $1', [req.user.id]);
     const senderName = sender.rows[0]?.username || 'Someone';
-    const recipientRows = await db.query(
-      'SELECT user_id FROM conversation_participants WHERE conversation_id = $1 AND user_id != $2',
-      [conversationId, req.user.id]
-    );
-    for (const { user_id } of recipientRows.rows) {
+    for (const { user_id } of others.rows) {
       sendPush(user_id, {
         title: senderName,
         body: content || '📷 Media',
         data: { type: 'message', conversationId },
-      }).catch(err => console.error('Message push error', err));
+      }).catch((err) => console.error('Message push error', err));
     }
 
     res.status(201).json(msg);

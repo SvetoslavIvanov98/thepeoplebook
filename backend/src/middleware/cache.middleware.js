@@ -39,12 +39,19 @@ const cache = (ttlSeconds = 60) => {
   };
 };
 
+/**
+ * Invalidate cached keys matching a pattern using SCAN (non-blocking) instead of KEYS.
+ * KEYS blocks Redis on large databases; SCAN iterates incrementally.
+ */
 const invalidateCache = async (pattern) => {
   try {
     if (!redis.isReady) return;
-    const keys = await redis.keys(pattern);
-    if (keys.length > 0) {
-      await redis.del(keys);
+    const keysToDelete = [];
+    for await (const key of redis.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+      keysToDelete.push(key);
+    }
+    if (keysToDelete.length > 0) {
+      await redis.del(keysToDelete);
     }
   } catch (err) {
     console.error('Redis invalidate error:', err);

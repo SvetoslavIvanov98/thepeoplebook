@@ -68,6 +68,15 @@ export default function NotificationsPage() {
     },
   });
 
+  const { mutate: markOneRead } = useMutation({
+    mutationFn: (id) => api.patch(`/notifications/${id}/read`),
+    onSuccess: () => {
+      // In a real app we might subtract 1 from unread, but this forces a recalculation if we care
+      qc.invalidateQueries({ queryKey: ['notifications'] });
+      qc.invalidateQueries({ queryKey: ['unread-count'] });
+    },
+  });
+
   return (
     <div className="pb-12">
       <header className="sticky top-0 bg-white/80 dark:bg-gray-950/80 backdrop-blur-xl border-b border-gray-100 dark:border-gray-800/50 px-6 py-4 z-10 shadow-sm flex items-center justify-between">
@@ -183,7 +192,16 @@ export default function NotificationsPage() {
               )}
             </div>
 
-            <div className="shrink-0 flex items-center pt-2">
+            <div className="shrink-0 flex items-center gap-2 pt-2">
+              {!n.read && (
+                <button
+                  onClick={() => markOneRead(n.id)}
+                  title="Mark as read"
+                  className="w-8 h-8 flex items-center justify-center rounded-full text-brand-600 hover:bg-brand-100 dark:hover:bg-brand-900/30 transition-colors"
+                >
+                  ✓
+                </button>
+              )}
               {n.post_id && (
                 <Link
                   to={`/post/${n.post_id}`}

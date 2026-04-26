@@ -72,6 +72,8 @@ export default function PostCard({ post, onDelete }) {
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
 
   // When post is a repost, all actions target the original post
   const targetId = post.repost_id ? post.orig_id : post.id;
@@ -101,6 +103,7 @@ export default function PostCard({ post, onDelete }) {
         is_verified: post.is_verified,
       };
   const displayCreatedAt = isRepost ? post.orig_created_at : post.created_at;
+  const displayEditedAt = isRepost ? post.orig_edited_at : post.edited_at;
 
   const { mutate: toggleLike } = useMutation({
     mutationFn: () => api.post(`/likes/post/${targetId}`),
@@ -129,6 +132,17 @@ export default function PostCard({ post, onDelete }) {
       if (onDelete) onDelete(post.id);
     },
     onError: (err) => toast.error(err?.response?.data?.error || 'Failed to delete post'),
+  });
+
+  const { mutate: submitEdit, isPending: isSubmittingEdit } = useMutation({
+    mutationFn: () => api.patch(`/posts/${targetId}`, { content: editContent }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['feed'] });
+      qc.invalidateQueries({ queryKey: ['user-posts'] });
+      setIsEditing(false);
+      toast.success('Post updated');
+    },
+    onError: (err) => toast.error(err?.response?.data?.error || 'Failed to edit post'),
   });
 
   // Original post was deleted but repost record exists
@@ -195,22 +209,44 @@ export default function PostCard({ post, onDelete }) {
               <span className="text-gray-500 dark:text-gray-400 text-sm">
                 @{displayUser.username}
               </span>
-              <span className="text-gray-400 text-sm">·</span>
-              <Link
-                to={`/post/${targetId}`}
-                className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-300 text-sm transition-colors"
-              >
-                {formatDistanceToNow(new Date(displayCreatedAt), { addSuffix: true })}
-              </Link>
-              <div className="ml-auto flex items-center">
-                {user?.id === post.user_id ? (
-                  <button
-                    onClick={() => deletePost()}
-                    disabled={isDeleting}
-                    className="text-xs text-red-400 hover:text-white hover:bg-red-500 disabled:opacity-50 px-3 py-1 rounded-full transition-all font-medium"
+              <div className="flex items-center gap-1">
+                <Link
+                  to={`/post/${targetId}`}
+                  className="text-gray-500 hover:text-gray-800 dark:hover:text-gray-300 text-sm transition-colors"
+                >
+                  {formatDistanceToNow(new Date(displayCreatedAt), { addSuffix: true })}
+                </Link>
+                {displayEditedAt && (
+                  <span
+                    className="text-xs text-gray-400 italic"
+                    title={new Date(displayEditedAt).toLocaleString()}
                   >
-                    {isDeleting ? 'Deleting…' : isRepost ? 'Remove repost' : 'Delete'}
-                  </button>
+                    (edited)
+                  </span>
+                )}
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                {user?.id === post.user_id ? (
+                  <>
+                    {!isRepost && (
+                      <button
+                        onClick={() => {
+                          setEditContent(displayContent || '');
+                          setIsEditing(!isEditing);
+                        }}
+                        className="text-xs text-gray-500 hover:text-brand-600 px-2 py-1 rounded-full transition-all font-medium"
+                      >
+                        {isEditing ? 'Cancel' : 'Edit'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => deletePost()}
+                      disabled={isDeleting}
+                      className="text-xs text-red-400 hover:text-white hover:bg-red-500 disabled:opacity-50 px-2 py-1 rounded-full transition-all font-medium"
+                    >
+                      {isDeleting ? 'Deleting…' : isRepost ? 'Remove repost' : 'Delete'}
+                    </button>
+                  </>
                 ) : (
                   <span className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
                     <ReportButton postId={targetId} />
@@ -219,11 +255,30 @@ export default function PostCard({ post, onDelete }) {
               </div>
             </div>
 
-            <PostContent
-              content={displayContent}
-              media={displayMedia}
-              onMediaClick={setLightboxIndex}
-            />
+            {isEditing ? (
+              <div className="mt-3 space-y-2">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full border border-gray-300 dark:border-gray-700 dark:bg-gray-800 rounded-xl p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500 resize-none min-h-[100px]"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => submitEdit()}
+                    disabled={isSubmittingEdit || editContent === displayContent}
+                    className="px-4 py-1.5 bg-brand-600 text-white rounded-full text-sm font-semibold disabled:opacity-50"
+                  >
+                    {isSubmittingEdit ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <PostContent
+                content={displayContent}
+                media={displayMedia}
+                onMediaClick={setLightboxIndex}
+              />
+            )}
 
             <div className="flex items-center gap-8 mt-4 text-gray-500 dark:text-gray-400 font-medium">
               <motion.button

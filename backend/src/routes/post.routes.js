@@ -9,6 +9,7 @@ const {
   getFeed,
   createPost,
   getPost,
+  editPost,
   deletePost,
   repost,
   getByHashtag,
@@ -29,6 +30,14 @@ router.post(
   createPost
 );
 router.get('/:id', paramInt('id'), validate, optionalAuth, getPost);
+router.patch(
+  '/:id',
+  authenticate,
+  paramInt('id'),
+  sanitizeBody('content'),
+  [body('content').optional().trim().isLength({ max: 5000 }), validate],
+  editPost
+);
 router.delete('/:id', authenticate, paramInt('id'), validate, deletePost);
 router.post('/:id/repost', authenticate, paramInt('id'), validate, repost);
 

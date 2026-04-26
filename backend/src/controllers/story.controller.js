@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { deleteS3Object } = require('../config/s3');
+const logger = require('../utils/logger');
 
 const createStory = async (req, res, next) => {
   try {
@@ -52,4 +53,25 @@ const deleteStory = async (req, res, next) => {
   }
 };
 
-module.exports = { createStory, getFeedStories, deleteStory };
+/**
+ * Clean up expired stories: remove from DB and delete S3 objects.
+ * Call this periodically (e.g., from a cron job or on-demand admin endpoint).
+ */
+const cleanupExpiredStories = async () => {
+  try {
+    const result = await db.query(
+      'DELETE FROM stories WHERE expires_at <= NOW() RETURNING id, media_url'
+    );
+    const deleted = result.rows;
+    if (deleted.length > 0) {
+      await Promise.all(deleted.map((s) => deleteS3Object(s.media_url)));
+      logger.info(`Cleaned up ${deleted.length} expired stories`);
+    }
+    return deleted.length;
+  } catch (err) {
+    logger.error('Story cleanup error:', err);
+    return 0;
+  }
+};
+
+module.exports = { createStory, getFeedStories, deleteStory, cleanupExpiredStories };

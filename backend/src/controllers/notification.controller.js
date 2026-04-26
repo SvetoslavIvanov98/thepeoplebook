@@ -21,9 +21,25 @@ const getNotifications = async (req, res, next) => {
   }
 };
 
+// Mark all notifications as read
 const markRead = async (req, res, next) => {
   try {
     await db.query('UPDATE notifications SET read = TRUE WHERE user_id = $1', [req.user.id]);
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// PATCH /api/notifications/:id/read — mark a single notification as read
+const markOneRead = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await db.query(
+      'UPDATE notifications SET read = TRUE WHERE id = $1 AND user_id = $2 RETURNING id',
+      [id, req.user.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Notification not found' });
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -52,14 +68,14 @@ const removePushToken = async (req, res, next) => {
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: 'token is required' });
-    await db.query(
-      'DELETE FROM push_tokens WHERE user_id = $1 AND token = $2',
-      [req.user.id, token]
-    );
+    await db.query('DELETE FROM push_tokens WHERE user_id = $1 AND token = $2', [
+      req.user.id,
+      token,
+    ]);
     res.json({ success: true });
   } catch (err) {
     next(err);
   }
 };
 
-module.exports = { getNotifications, markRead, registerPushToken, removePushToken };
+module.exports = { getNotifications, markRead, markOneRead, registerPushToken, removePushToken };

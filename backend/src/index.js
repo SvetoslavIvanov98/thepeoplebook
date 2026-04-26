@@ -3,6 +3,8 @@ const app = require('./app');
 const http = require('http');
 const { initSocket } = require('./services/socket.service');
 const { pool } = require('./config/db');
+const redis = require('./config/redis');
+const logger = require('./utils/logger');
 
 const PORT = process.env.PORT || 4000;
 
@@ -10,7 +12,9 @@ const applyMigrations = async () => {
   // Idempotent migrations safe to run on every start
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE`);
-  await pool.query(`ALTER TABLE groups ADD COLUMN IF NOT EXISTS privacy VARCHAR(10) NOT NULL DEFAULT 'public'`);
+  await pool.query(
+    `ALTER TABLE groups ADD COLUMN IF NOT EXISTS privacy VARCHAR(10) NOT NULL DEFAULT 'public'`
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS group_join_requests (
       id          BIGSERIAL PRIMARY KEY,
@@ -21,7 +25,9 @@ const applyMigrations = async () => {
       UNIQUE (group_id, user_id)
     )
   `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_group_join_requests ON group_join_requests (group_id, status)`);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_group_join_requests ON group_join_requests (group_id, status)`
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS group_invites (
       id          BIGSERIAL PRIMARY KEY,
@@ -33,9 +39,15 @@ const applyMigrations = async () => {
       UNIQUE (group_id, invitee_id)
     )
   `);
-  await pool.query(`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES groups(id) ON DELETE CASCADE`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE`);
+  await pool.query(
+    `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES groups(id) ON DELETE CASCADE`
+  );
+  await pool.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`
+  );
+  await pool.query(
+    `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE`
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS content_reports (
       id               BIGSERIAL PRIMARY KEY,
@@ -53,10 +65,18 @@ const applyMigrations = async () => {
       CONSTRAINT report_has_target CHECK (post_id IS NOT NULL OR comment_id IS NOT NULL OR reported_user_id IS NOT NULL)
     )
   `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports (status, created_at DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_content_reports_post ON content_reports (post_id) WHERE post_id IS NOT NULL`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_content_reports_comment ON content_reports (comment_id) WHERE comment_id IS NOT NULL`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_content_reports_user ON content_reports (reported_user_id) WHERE reported_user_id IS NOT NULL`);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports (status, created_at DESC)`
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_content_reports_post ON content_reports (post_id) WHERE post_id IS NOT NULL`
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_content_reports_comment ON content_reports (comment_id) WHERE comment_id IS NOT NULL`
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_content_reports_user ON content_reports (reported_user_id) WHERE reported_user_id IS NOT NULL`
+  );
   await pool.query(`
     CREATE TABLE IF NOT EXISTS moderation_decisions (
       id             BIGSERIAL PRIMARY KEY,
@@ -72,10 +92,20 @@ const applyMigrations = async () => {
       created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moderation_decisions_user ON moderation_decisions (target_user_id, created_at DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_moderation_decisions_report ON moderation_decisions (report_id) WHERE report_id IS NOT NULL`);
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_moderation_decisions_user ON moderation_decisions (target_user_id, created_at DESC)`
+  );
+  await pool.query(
+    `CREATE INDEX IF NOT EXISTS idx_moderation_decisions_report ON moderation_decisions (report_id) WHERE report_id IS NOT NULL`
+  );
   // Patch existing content_reports tables that predate the reported_user_id column
-  await pool.query(`ALTER TABLE content_reports ADD COLUMN IF NOT EXISTS reported_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE`);
+  await pool.query(
+    `ALTER TABLE content_reports ADD COLUMN IF NOT EXISTS reported_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE`
+  );
+
+  // Add edited_at columns for post/comment editing support
+  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`);
 
   // Promote the configured admin user if set
   const adminUsername = process.env.ADMIN_USERNAME;
@@ -84,22 +114,68 @@ const applyMigrations = async () => {
       `UPDATE users SET role = 'admin' WHERE username = $1 AND role != 'admin' RETURNING username`,
       [adminUsername]
     );
-    if (result.rows[0]) console.log(`Promoted '${adminUsername}' to admin`);
+    if (result.rows[0]) logger.info(`Promoted '${adminUsername}' to admin`);
   }
 
-  console.log('Migrations applied');
+  logger.info('Migrations applied');
 };
+
+let server;
 
 const start = async () => {
   await applyMigrations();
-  const server = http.createServer(app);
+  server = http.createServer(app);
   initSocket(server);
   server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    logger.info(`Server running on port ${PORT}`);
   });
 };
 
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+const shutdown = async (signal) => {
+  logger.info(`${signal} received — shutting down gracefully...`);
+
+  // Stop accepting new connections
+  if (server) {
+    server.close(() => {
+      logger.info('HTTP server closed');
+    });
+  }
+
+  try {
+    // Close database pool
+    await pool.end();
+    logger.info('Database pool closed');
+  } catch (err) {
+    logger.error('Error closing database pool:', err);
+  }
+
+  try {
+    // Close Redis connection
+    if (redis.isReady) {
+      await redis.quit();
+      logger.info('Redis connection closed');
+    }
+  } catch (err) {
+    logger.error('Error closing Redis:', err);
+  }
+
+  process.exit(0);
+};
+
+// Force exit after 10s if graceful shutdown hangs
+const forceShutdown = (signal) => {
+  shutdown(signal);
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000).unref();
+};
+
+process.on('SIGTERM', () => forceShutdown('SIGTERM'));
+process.on('SIGINT', () => forceShutdown('SIGINT'));
+
 start().catch((err) => {
-  console.error('Failed to start server:', err);
+  logger.error('Failed to start server:', err);
   process.exit(1);
 });
