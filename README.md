@@ -1,10 +1,10 @@
 # The People Book
 
 <div align="center">
-  <img src="./assets/banner.png" alt="The People Book Banner" width="100%" />
+  <img src="./assets/landing_page.png" alt="The People Book Landing Page" width="100%" />
   
   <p align="center">
-    <strong>A privacy-first, full-stack social ecosystem with glassmorphic aesthetics.</strong>
+    <strong>Do you miss the old internet? A privacy-first, full-stack social network built with glassmorphic aesthetics.</strong>
   </p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
@@ -19,7 +19,7 @@
 
 ## 🌟 Overview
 
-**The People Book** is a cutting-edge social networking platform built for the modern web. It combines a premium, glassmorphic UI with a high-performance, type-safe backend to deliver a seamless user experience.
+**The People Book** is a cutting-edge social networking platform built for the modern web. It combines a premium, glassmorphic UI with a high-performance, type-safe backend to deliver a seamless user experience. It's a tribute to the "old internet" where privacy and community came first, but with a sleek, modern finish.
 
 ### 🎥 Watch the Demo
 
