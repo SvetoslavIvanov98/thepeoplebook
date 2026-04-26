@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const { emitNotification } = require('../services/notification.service');
 const { deleteS3Object } = require('../config/s3');
 const { buildPostQuery } = require('../models/post.model');
@@ -6,7 +6,7 @@ const { buildPostQuery } = require('../models/post.model');
 const getFeed = async (req, res, next) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
-    const cursor = req.query.cursor; // ISO date string for cursor-based pagination
+    const cursor = req.query.cursor;
 
     const query = buildPostQuery({
       where: `AND (p.user_id = $1 OR p.user_id IN (SELECT following_id FROM follows WHERE follower_id = $1))
@@ -21,14 +21,14 @@ const getFeed = async (req, res, next) => {
 
     const params = req.user
       ? cursor
-        ? [req.user.id, limit, req.user.id, cursor]
-        : [req.user.id, limit, req.user.id]
+        ? [BigInt(req.user.id), limit, BigInt(req.user.id), cursor]
+        : [BigInt(req.user.id), limit, BigInt(req.user.id)]
       : cursor
         ? [req.user?.id || 0, limit, cursor]
         : [req.user?.id || 0, limit];
 
-    const result = await db.query(query, params);
-    res.json(result.rows);
+    const result = await prisma.$queryRawUnsafe(query, ...params);
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -41,20 +41,19 @@ const createPost = async (req, res, next) => {
 
     const hashtagArr = hashtags
       ? JSON.parse(hashtags)
-      : (content?.match(/#\w+/g) || []).map((t) => t.slice(1).toLowerCase());
+      : (content?.match(/#w+/g) || []).map((t) => t.slice(1).toLowerCase());
 
-    const result = await db.query(
-      `INSERT INTO posts (user_id, content, media_urls, hashtags, group_id)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [
-        req.user.id,
-        content || null,
-        JSON.stringify(media_urls),
-        JSON.stringify(hashtagArr),
-        group_id || null,
-      ]
-    );
-    res.status(201).json(result.rows[0]);
+    const post = await prisma.posts.create({
+      data: {
+        user_id: BigInt(req.user.id),
+        content: content || null,
+        media_urls: media_urls,
+        hashtags: hashtagArr,
+        group_id: group_id ? BigInt(group_id) : null,
+      },
+    });
+
+    res.status(201).json(post);
   } catch (err) {
     next(err);
   }
@@ -68,9 +67,13 @@ const getPost = async (req, res, next) => {
       userParamRef: '$2',
     });
 
-    const result = await db.query(query, req.user ? [req.params.id, req.user.id] : [req.params.id]);
-    if (!result.rows[0]) return res.status(404).json({ error: 'Post not found' });
-    res.json(result.rows[0]);
+    const params = req.user
+      ? [BigInt(req.params.id), BigInt(req.user.id)]
+      : [BigInt(req.params.id)];
+    const result = await prisma.$queryRawUnsafe(query, ...params);
+
+    if (!result[0]) return res.status(404).json({ error: 'Post not found' });
+    res.json(result[0]);
   } catch (err) {
     next(err);
   }
@@ -80,22 +83,28 @@ const getPost = async (req, res, next) => {
 const editPost = async (req, res, next) => {
   try {
     const { content } = req.body;
-    const result = await db.query(
-      `UPDATE posts SET content = $1, edited_at = NOW()
-       WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
-       RETURNING id, content, edited_at`,
-      [content, req.params.id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(403).json({ error: 'Not allowed' });
+    const postId = BigInt(req.params.id);
+    const userId = BigInt(req.user.id);
 
-    // Re-extract hashtags from the updated content
-    const hashtagArr = (content?.match(/#\w+/g) || []).map((t) => t.slice(1).toLowerCase());
-    await db.query('UPDATE posts SET hashtags = $1 WHERE id = $2', [
-      JSON.stringify(hashtagArr),
-      req.params.id,
-    ]);
+    const postToUpdate = await prisma.posts.findFirst({
+      where: { id: postId, user_id: userId, deleted_at: null },
+    });
 
-    res.json(result.rows[0]);
+    if (!postToUpdate) return res.status(403).json({ error: 'Not allowed' });
+
+    const hashtagArr = (content?.match(/#w+/g) || []).map((t) => t.slice(1).toLowerCase());
+
+    const updated = await prisma.posts.update({
+      where: { id: postId },
+      data: {
+        content,
+        edited_at: new Date(),
+        hashtags: hashtagArr,
+      },
+      select: { id: true, content: true, edited_at: true },
+    });
+
+    res.json(updated);
   } catch (err) {
     next(err);
   }
@@ -103,13 +112,22 @@ const editPost = async (req, res, next) => {
 
 const deletePost = async (req, res, next) => {
   try {
-    const result = await db.query(
-      'UPDATE posts SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 RETURNING id, media_urls',
-      [req.params.id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(403).json({ error: 'Not allowed' });
+    const postId = BigInt(req.params.id);
+    const userId = BigInt(req.user.id);
 
-    const mediaUrls = result.rows[0].media_urls || [];
+    const postToDelete = await prisma.posts.findFirst({
+      where: { id: postId, user_id: userId, deleted_at: null },
+    });
+
+    if (!postToDelete) return res.status(403).json({ error: 'Not allowed' });
+
+    const deleted = await prisma.posts.update({
+      where: { id: postId },
+      data: { deleted_at: new Date() },
+      select: { id: true, media_urls: true },
+    });
+
+    const mediaUrls = Array.isArray(deleted.media_urls) ? deleted.media_urls : [];
     await Promise.all(mediaUrls.map((url) => deleteS3Object(url)));
 
     res.json({ success: true });
@@ -120,33 +138,39 @@ const deletePost = async (req, res, next) => {
 
 const repost = async (req, res, next) => {
   try {
-    const { id: repost_id } = req.params;
-    const original = await db.query(
-      'SELECT user_id FROM posts WHERE id = $1 AND deleted_at IS NULL',
-      [repost_id]
-    );
-    if (!original.rows[0]) return res.status(404).json({ error: 'Post not found' });
+    const repostId = BigInt(req.params.id);
+    const userId = BigInt(req.user.id);
+
+    const original = await prisma.posts.findFirst({
+      where: { id: repostId, deleted_at: null },
+      select: { user_id: true },
+    });
+
+    if (!original) return res.status(404).json({ error: 'Post not found' });
 
     // Toggle: un-repost if already reposted
-    const existing = await db.query(
-      'SELECT id FROM posts WHERE user_id = $1 AND repost_id = $2 AND deleted_at IS NULL',
-      [req.user.id, repost_id]
-    );
-    if (existing.rows[0]) {
-      await db.query('UPDATE posts SET deleted_at = NOW() WHERE id = $1', [existing.rows[0].id]);
+    const existing = await prisma.posts.findFirst({
+      where: { user_id: userId, repost_id: repostId, deleted_at: null },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await prisma.posts.update({
+        where: { id: existing.id },
+        data: { deleted_at: new Date() },
+      });
       return res.json({ reposted: false });
     }
 
-    await db.query('INSERT INTO posts (user_id, repost_id) VALUES ($1, $2)', [
-      req.user.id,
-      repost_id,
-    ]);
+    await prisma.posts.create({
+      data: { user_id: userId, repost_id: repostId },
+    });
 
-    if (original.rows[0].user_id !== req.user.id) {
-      await emitNotification(original.rows[0].user_id, {
+    if (original.user_id !== userId) {
+      await emitNotification(original.user_id, {
         type: 'repost',
         actor_id: req.user.id,
-        post_id: repost_id,
+        post_id: req.params.id,
       });
     }
 
@@ -171,14 +195,14 @@ const getByHashtag = async (req, res, next) => {
 
     const params = req.user
       ? cursor
-        ? [JSON.stringify([tag]), limit, req.user.id, cursor]
-        : [JSON.stringify([tag]), limit, req.user.id]
+        ? [JSON.stringify([tag]), limit, BigInt(req.user.id), cursor]
+        : [JSON.stringify([tag]), limit, BigInt(req.user.id)]
       : cursor
         ? [JSON.stringify([tag]), limit, cursor]
         : [JSON.stringify([tag]), limit];
 
-    const result = await db.query(query, params);
-    res.json(result.rows);
+    const result = await prisma.$queryRawUnsafe(query, ...params);
+    res.json(result);
   } catch (err) {
     next(err);
   }

@@ -1,46 +1,19 @@
-const { Pool } = require('pg');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  // Explicit pool configuration for production reliability
-  max: parseInt(process.env.DB_POOL_MAX) || 20,
-  idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT) || 30000,
-  connectionTimeoutMillis: parseInt(process.env.DB_CONNECT_TIMEOUT) || 5000,
-});
-
-pool.on('error', (err) => {
-  console.error('Unexpected DB error', err);
-});
-
-/**
- * Run a function inside a database transaction.
- * The callback receives a `client` that must be used for all queries in the tx.
- * Automatically rolls back on error and releases the client.
- *
- * Usage:
- *   const result = await withTransaction(async (client) => {
- *     await client.query('INSERT ...');
- *     await client.query('UPDATE ...');
- *     return someValue;
- *   });
- */
-const withTransaction = async (fn) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
-    return result;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
-};
+const prisma = require('./prisma');
 
 module.exports = {
-  query: (text, params) => pool.query(text, params),
-  pool,
-  withTransaction,
+  query: async (text, params) => {
+    // Temporary wrapper to keep legacy pg code working during migration
+    // Convert $1, $2 to prisma parameters...
+    // Actually, prisma.$queryRawUnsafe takes the string and the params directly!
+    // But pg uses 1-indexed $1, $2, whereas prisma expects Prisma.sql or just passing them.
+    // Let's just pass it through to $queryRawUnsafe
+
+    try {
+      const result = await prisma.$queryRawUnsafe(text, ...(params || []));
+      return { rows: Array.isArray(result) ? result : [result] };
+    } catch (e) {
+      console.error('Legacy db.query error:', e);
+      throw e;
+    }
+  },
 };

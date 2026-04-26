@@ -6,13 +6,13 @@ module.exports = {
       displayName: 'unit',
       testEnvironment: 'node',
       testMatch: ['<rootDir>/src/tests/unit/**/*.test.js'],
-      setupFiles: ['<rootDir>/src/tests/setup.js'],
+      setupFilesAfterEnv: ['<rootDir>/src/tests/setup.js'],
     },
     {
       displayName: 'integration',
       testEnvironment: 'node',
       testMatch: ['<rootDir>/src/tests/integration/**/*.test.js'],
-      setupFiles: ['<rootDir>/src/tests/setup.js'],
+      setupFilesAfterEnv: ['<rootDir>/src/tests/setup.js'],
     },
   ],
 };

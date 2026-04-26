@@ -1,6 +1,6 @@
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 let io;
 
@@ -26,12 +26,18 @@ const initSocket = (server) => {
 
     socket.on('join_conversation', async (conversationId) => {
       try {
-        const member = await db.query(
-          'SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2',
-          [conversationId, socket.userId]
-        );
-        if (member.rows[0]) socket.join(`conv:${conversationId}`);
-      } catch (_) { /* ignore */ }
+        const member = await prisma.conversation_participants.findUnique({
+          where: {
+            conversation_id_user_id: {
+              conversation_id: BigInt(conversationId),
+              user_id: BigInt(socket.userId),
+            },
+          },
+        });
+        if (member) socket.join(`conv:${conversationId}`);
+      } catch (_) {
+        /* ignore */
+      }
     });
 
     socket.on('leave_conversation', (conversationId) => {

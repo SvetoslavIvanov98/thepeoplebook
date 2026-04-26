@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const { getIO } = require('./socket.service');
 const { sendPush } = require('./push.service');
 
@@ -16,30 +16,39 @@ const NOTIFICATION_TITLES = {
 
 const emitNotification = async (userId, payload) => {
   try {
-    const result = await db.query(
-      `INSERT INTO notifications (user_id, type, actor_id, post_id, comment_id, group_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [userId, payload.type, payload.actor_id || null, payload.post_id || null, payload.comment_id || null, payload.group_id || null]
-    );
+    const notification = await prisma.notifications.create({
+      data: {
+        user_id: BigInt(userId),
+        type: payload.type,
+        actor_id: payload.actor_id ? BigInt(payload.actor_id) : null,
+        post_id: payload.post_id ? BigInt(payload.post_id) : null,
+        comment_id: payload.comment_id ? BigInt(payload.comment_id) : null,
+        group_id: payload.group_id ? BigInt(payload.group_id) : null,
+      },
+    });
+
     const io = getIO();
-    if (io) io.to(`user:${userId}`).emit('notification', result.rows[0]);
+    if (io) io.to(`user:${userId}`).emit('notification', notification);
 
     // Send push notification
     if (payload.actor_id) {
-      const actor = await db.query('SELECT username FROM users WHERE id = $1', [payload.actor_id]);
-      const actorName = actor.rows[0]?.username || 'Someone';
+      const actor = await prisma.users.findUnique({
+        where: { id: BigInt(payload.actor_id) },
+        select: { username: true },
+      });
+      const actorName = actor?.username || 'Someone';
       const body = `${actorName} ${NOTIFICATION_TITLES[payload.type] || 'sent you a notification'}`;
       sendPush(userId, {
         title: 'New notification',
         body,
         data: { type: payload.type, post_id: payload.post_id, group_id: payload.group_id },
-      }).catch(err => console.error('Push notification error', err));
+      }).catch((err) => console.error('Push notification error', err));
     } else if (payload.type === 'moderation_decision') {
       sendPush(userId, {
         title: 'Moderation notice',
         body: NOTIFICATION_TITLES.moderation_decision,
         data: { type: payload.type },
-      }).catch(err => console.error('Push notification error', err));
+      }).catch((err) => console.error('Push notification error', err));
     }
   } catch (err) {
     console.error('Notification error', err);

@@ -1,0 +1,351 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model comments {
+  id              BigInt            @id @default(autoincrement())
+  post_id         BigInt
+  user_id         BigInt
+  content         String
+  parent_id       BigInt?
+  deleted_at      DateTime?         @db.Timestamptz(6)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  likes_count     Int               @default(0)
+  edited_at       DateTime?         @db.Timestamptz(6)
+  comments        comments?         @relation("commentsTocomments", fields: [parent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  other_comments  comments[]        @relation("commentsTocomments")
+  posts           posts             @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  content_reports content_reports[]
+  likes           likes[]
+  notifications   notifications[]
+
+  @@index([post_id, created_at], map: "idx_comments_post", where: raw("(deleted_at IS NULL)"))
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model content_reports {
+  id                                            BigInt                 @id @default(autoincrement())
+  reporter_id                                   BigInt
+  post_id                                       BigInt?
+  comment_id                                    BigInt?
+  reported_user_id                              BigInt?
+  reason                                        String                 @db.VarChar(50)
+  description                                   String?
+  status                                        String                 @default("pending") @db.VarChar(20)
+  admin_note                                    String?
+  decided_by                                    BigInt?
+  decided_at                                    DateTime?              @db.Timestamptz(6)
+  created_at                                    DateTime               @default(now()) @db.Timestamptz(6)
+  comments                                      comments?              @relation(fields: [comment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_content_reports_decided_byTousers       users?                 @relation("content_reports_decided_byTousers", fields: [decided_by], references: [id], onUpdate: NoAction)
+  posts                                         posts?                 @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_content_reports_reported_user_idTousers users?                 @relation("content_reports_reported_user_idTousers", fields: [reported_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_content_reports_reporter_idTousers      users                  @relation("content_reports_reporter_idTousers", fields: [reporter_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  moderation_decisions                          moderation_decisions[]
+
+  @@index([comment_id], map: "idx_content_reports_comment", where: raw("(comment_id IS NOT NULL)"))
+  @@index([post_id], map: "idx_content_reports_post", where: raw("(post_id IS NOT NULL)"))
+  @@index([status, created_at(sort: Desc)], map: "idx_content_reports_status")
+  @@index([reported_user_id], map: "idx_content_reports_user", where: raw("(reported_user_id IS NOT NULL)"))
+}
+
+model conversation_participants {
+  id              BigInt        @id @default(autoincrement())
+  conversation_id BigInt
+  user_id         BigInt
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([conversation_id, user_id])
+}
+
+model conversations {
+  id                        BigInt                      @id @default(autoincrement())
+  created_at                DateTime                    @default(now()) @db.Timestamptz(6)
+  conversation_participants conversation_participants[]
+  messages                  messages[]
+}
+
+model follows {
+  id                                BigInt   @id @default(autoincrement())
+  follower_id                       BigInt
+  following_id                      BigInt
+  created_at                        DateTime @default(now()) @db.Timestamptz(6)
+  users_follows_follower_idTousers  users    @relation("follows_follower_idTousers", fields: [follower_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_follows_following_idTousers users    @relation("follows_following_idTousers", fields: [following_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([follower_id, following_id])
+  @@index([follower_id], map: "idx_follows_follower")
+  @@index([following_id], map: "idx_follows_following")
+}
+
+model group_invites {
+  id                                    BigInt   @id @default(autoincrement())
+  group_id                              BigInt
+  inviter_id                            BigInt
+  invitee_id                            BigInt
+  status                                String   @default("pending") @db.VarChar(10)
+  created_at                            DateTime @default(now()) @db.Timestamptz(6)
+  groups                                groups   @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_group_invites_invitee_idTousers users    @relation("group_invites_invitee_idTousers", fields: [invitee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_group_invites_inviter_idTousers users    @relation("group_invites_inviter_idTousers", fields: [inviter_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([group_id, invitee_id])
+}
+
+model group_join_requests {
+  id         BigInt   @id @default(autoincrement())
+  group_id   BigInt
+  user_id    BigInt
+  status     String   @default("pending") @db.VarChar(10)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  groups     groups   @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([group_id, user_id])
+  @@index([group_id, status], map: "idx_group_join_requests")
+}
+
+model group_members {
+  id        BigInt   @id @default(autoincrement())
+  group_id  BigInt
+  user_id   BigInt
+  role      String   @default("member") @db.VarChar(20)
+  joined_at DateTime @default(now()) @db.Timestamptz(6)
+  groups    groups   @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users     users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([group_id, user_id])
+}
+
+model groups {
+  id                  BigInt                @id @default(autoincrement())
+  name                String                @db.VarChar(80)
+  description         String?
+  cover_url           String?
+  owner_id            BigInt
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  privacy             String                @default("public") @db.VarChar(10)
+  members_count       Int                   @default(0)
+  post_count          Int                   @default(0)
+  group_invites       group_invites[]
+  group_join_requests group_join_requests[]
+  group_members       group_members[]
+  users               users                 @relation(fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  notifications       notifications[]
+  posts               posts[]
+}
+
+model likes {
+  id         BigInt    @id @default(autoincrement())
+  user_id    BigInt
+  post_id    BigInt?
+  comment_id BigInt?
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  comments   comments? @relation(fields: [comment_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_likes_comment")
+  posts      posts?    @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, comment_id])
+  @@unique([user_id, post_id])
+  @@index([post_id], map: "idx_likes_post")
+}
+
+model messages {
+  id              BigInt        @id @default(autoincrement())
+  conversation_id BigInt
+  sender_id       BigInt
+  content         String?
+  media_url       String?
+  read            Boolean       @default(false)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([conversation_id, created_at(sort: Desc)], map: "idx_messages_conv")
+}
+
+model moderation_decisions {
+  id                                               BigInt           @id @default(autoincrement())
+  report_id                                        BigInt?
+  target_user_id                                   BigInt
+  action_type                                      String           @db.VarChar(30)
+  reason                                           String
+  legal_basis                                      String?
+  decided_by                                       BigInt?
+  appealed                                         Boolean          @default(false)
+  appeal_outcome                                   String?          @db.VarChar(20)
+  appeal_note                                      String?
+  created_at                                       DateTime         @default(now()) @db.Timestamptz(6)
+  users_moderation_decisions_decided_byTousers     users?           @relation("moderation_decisions_decided_byTousers", fields: [decided_by], references: [id], onUpdate: NoAction)
+  content_reports                                  content_reports? @relation(fields: [report_id], references: [id], onUpdate: NoAction)
+  users_moderation_decisions_target_user_idTousers users            @relation("moderation_decisions_target_user_idTousers", fields: [target_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([report_id], map: "idx_moderation_decisions_report", where: raw("(report_id IS NOT NULL)"))
+  @@index([target_user_id, created_at(sort: Desc)], map: "idx_moderation_decisions_user")
+}
+
+model notifications {
+  id                                  BigInt    @id @default(autoincrement())
+  user_id                             BigInt
+  type                                String    @db.VarChar(30)
+  actor_id                            BigInt?
+  post_id                             BigInt?
+  comment_id                          BigInt?
+  read                                Boolean   @default(false)
+  created_at                          DateTime  @default(now()) @db.Timestamptz(6)
+  group_id                            BigInt?
+  users_notifications_actor_idTousers users?    @relation("notifications_actor_idTousers", fields: [actor_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  comments                            comments? @relation(fields: [comment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  groups                              groups?   @relation(fields: [group_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  posts                               posts?    @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_notifications_user_idTousers  users     @relation("notifications_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, read, created_at(sort: Desc)], map: "idx_notifications_user")
+}
+
+model posts {
+  id              BigInt            @id @default(autoincrement())
+  user_id         BigInt
+  content         String?
+  media_urls      Json              @default("[]")
+  hashtags        Json              @default("[]")
+  repost_id       BigInt?
+  group_id        BigInt?
+  deleted_at      DateTime?         @db.Timestamptz(6)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
+  likes_count     Int               @default(0)
+  comments_count  Int               @default(0)
+  reposts_count   Int               @default(0)
+  edited_at       DateTime?         @db.Timestamptz(6)
+  comments        comments[]
+  content_reports content_reports[]
+  likes           likes[]
+  notifications   notifications[]
+  groups          groups?           @relation(fields: [group_id], references: [id], onUpdate: NoAction)
+  posts           posts?            @relation("postsToposts", fields: [repost_id], references: [id], onUpdate: NoAction)
+  other_posts     posts[]           @relation("postsToposts")
+  users           users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([content(ops: raw("gin_trgm_ops"))], map: "idx_posts_content", type: Gin, where: raw("(deleted_at IS NULL)"))
+  @@index([group_id], map: "idx_posts_group_id", where: raw("(group_id IS NOT NULL)"))
+  @@index([hashtags], map: "idx_posts_hashtags", type: Gin)
+  @@index([user_id, created_at(sort: Desc)], map: "idx_posts_user_id", where: raw("(deleted_at IS NULL)"))
+}
+
+model push_tokens {
+  id         BigInt    @id @default(autoincrement())
+  user_id    BigInt
+  token      String
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, token])
+  @@index([user_id], map: "idx_push_tokens_user")
+}
+
+model refresh_tokens {
+  id         BigInt   @id @default(autoincrement())
+  user_id    BigInt
+  token_hash String   @unique
+  expires_at DateTime @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([token_hash], map: "idx_refresh_tokens_hash")
+  @@index([user_id], map: "idx_refresh_tokens_user")
+}
+
+model stories {
+  id         BigInt   @id @default(autoincrement())
+  user_id    BigInt
+  media_url  String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  expires_at DateTime @default(dbgenerated("(now() + '24:00:00'::interval)")) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expires_at], map: "idx_stories_expires_at")
+  @@index([user_id], map: "idx_stories_user")
+}
+
+model user_blocks {
+  id                                  BigInt   @id @default(autoincrement())
+  blocker_id                          BigInt
+  blocked_id                          BigInt
+  created_at                          DateTime @default(now()) @db.Timestamptz(6)
+  users_user_blocks_blocked_idTousers users    @relation("user_blocks_blocked_idTousers", fields: [blocked_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_user_blocks_blocker_idTousers users    @relation("user_blocks_blocker_idTousers", fields: [blocker_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([blocker_id, blocked_id])
+  @@index([blocked_id], map: "idx_user_blocks_blocked")
+  @@index([blocker_id], map: "idx_user_blocks_blocker")
+}
+
+model user_mutes {
+  id                               BigInt   @id @default(autoincrement())
+  muter_id                         BigInt
+  muted_id                         BigInt
+  created_at                       DateTime @default(now()) @db.Timestamptz(6)
+  users_user_mutes_muted_idTousers users    @relation("user_mutes_muted_idTousers", fields: [muted_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_user_mutes_muter_idTousers users    @relation("user_mutes_muter_idTousers", fields: [muter_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([muter_id, muted_id])
+  @@index([muter_id], map: "idx_user_mutes_muter")
+}
+
+model users {
+  id                                                              BigInt                      @id @default(autoincrement())
+  username                                                        String                      @unique @db.VarChar(30)
+  email                                                           String                      @unique @db.VarChar(255)
+  password_hash                                                   String?
+  full_name                                                       String?                     @db.VarChar(100)
+  bio                                                             String?
+  avatar_url                                                      String?
+  google_id                                                       String?                     @unique
+  is_verified                                                     Boolean                     @default(false)
+  created_at                                                      DateTime                    @default(now()) @db.Timestamptz(6)
+  updated_at                                                      DateTime                    @default(now()) @db.Timestamptz(6)
+  cover_url                                                       String?
+  date_of_birth                                                   DateTime?                   @db.Date
+  role                                                            String                      @default("user") @db.VarChar(20)
+  is_banned                                                       Boolean                     @default(false)
+  followers_count                                                 Int                         @default(0)
+  following_count                                                 Int                         @default(0)
+  post_count                                                      Int                         @default(0)
+  comments                                                        comments[]
+  content_reports_content_reports_decided_byTousers               content_reports[]           @relation("content_reports_decided_byTousers")
+  content_reports_content_reports_reported_user_idTousers         content_reports[]           @relation("content_reports_reported_user_idTousers")
+  content_reports_content_reports_reporter_idTousers              content_reports[]           @relation("content_reports_reporter_idTousers")
+  conversation_participants                                       conversation_participants[]
+  follows_follows_follower_idTousers                              follows[]                   @relation("follows_follower_idTousers")
+  follows_follows_following_idTousers                             follows[]                   @relation("follows_following_idTousers")
+  group_invites_group_invites_invitee_idTousers                   group_invites[]             @relation("group_invites_invitee_idTousers")
+  group_invites_group_invites_inviter_idTousers                   group_invites[]             @relation("group_invites_inviter_idTousers")
+  group_join_requests                                             group_join_requests[]
+  group_members                                                   group_members[]
+  groups                                                          groups[]
+  likes                                                           likes[]
+  messages                                                        messages[]
+  moderation_decisions_moderation_decisions_decided_byTousers     moderation_decisions[]      @relation("moderation_decisions_decided_byTousers")
+  moderation_decisions_moderation_decisions_target_user_idTousers moderation_decisions[]      @relation("moderation_decisions_target_user_idTousers")
+  notifications_notifications_actor_idTousers                     notifications[]             @relation("notifications_actor_idTousers")
+  notifications_notifications_user_idTousers                      notifications[]             @relation("notifications_user_idTousers")
+  posts                                                           posts[]
+  push_tokens                                                     push_tokens[]
+  refresh_tokens                                                  refresh_tokens[]
+  stories                                                         stories[]
+  user_blocks_user_blocks_blocked_idTousers                       user_blocks[]               @relation("user_blocks_blocked_idTousers")
+  user_blocks_user_blocks_blocker_idTousers                       user_blocks[]               @relation("user_blocks_blocker_idTousers")
+  user_mutes_user_mutes_muted_idTousers                           user_mutes[]                @relation("user_mutes_muted_idTousers")
+  user_mutes_user_mutes_muter_idTousers                           user_mutes[]                @relation("user_mutes_muter_idTousers")
+
+  @@index([full_name(ops: raw("gin_trgm_ops"))], map: "idx_users_full_name", type: Gin)
+  @@index([username(ops: raw("gin_trgm_ops"))], map: "idx_users_username", type: Gin)
+}
