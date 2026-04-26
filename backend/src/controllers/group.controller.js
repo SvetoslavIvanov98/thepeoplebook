@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const { emitNotification } = require('../services/notification.service');
 const { sanitizeLike } = require('../utils/sanitize');
 
@@ -10,16 +10,23 @@ const createGroup = async (req, res, next) => {
     const cover_url = req.file ? req.file.location : null;
 
     // Use transaction: create group + add owner as admin atomically
-    const group = await db.withTransaction(async (client) => {
-      const result = await client.query(
-        'INSERT INTO groups (name, description, cover_url, owner_id, privacy) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-        [name, description || null, cover_url, req.user.id, privacy]
-      );
-      const g = result.rows[0];
-      await client.query(
-        'INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)',
-        [g.id, req.user.id, 'admin']
-      );
+    const group = await prisma.$transaction(async (tx) => {
+      const g = await tx.groups.create({
+        data: {
+          name,
+          description: description || null,
+          cover_url,
+          owner_id: BigInt(req.user.id),
+          privacy,
+        },
+      });
+      await tx.group_members.create({
+        data: {
+          group_id: g.id,
+          user_id: BigInt(req.user.id),
+          role: 'admin',
+        },
+      });
       return g;
     });
 
@@ -34,42 +41,27 @@ const updateGroup = async (req, res, next) => {
     const { id } = req.params;
     const { name, description, privacy } = req.body;
 
-    const admin = await db.query(
-      'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2 AND role = $3',
-      [id, req.user.id, 'admin']
-    );
-    if (!admin.rows[0]) return res.status(403).json({ error: 'Not a group admin' });
+    const admin = await prisma.group_members.findFirst({
+      where: { group_id: BigInt(id), user_id: BigInt(req.user.id), role: 'admin' },
+    });
+    if (!admin) return res.status(403).json({ error: 'Not a group admin' });
 
     if (privacy && !['public', 'private'].includes(privacy))
       return res.status(400).json({ error: 'privacy must be public or private' });
 
-    const setParts = [];
-    const vals = [];
-    let idx = 1;
-    if (name !== undefined) {
-      setParts.push(`name = $${idx++}`);
-      vals.push(name);
-    }
-    if (description !== undefined) {
-      setParts.push(`description = $${idx++}`);
-      vals.push(description);
-    }
-    if (privacy !== undefined) {
-      setParts.push(`privacy = $${idx++}`);
-      vals.push(privacy);
-    }
-    if (req.file) {
-      setParts.push(`cover_url = $${idx++}`);
-      vals.push(req.file.location);
-    }
-    if (!setParts.length) return res.status(400).json({ error: 'Nothing to update' });
+    const data = {};
+    if (name !== undefined) data.name = name;
+    if (description !== undefined) data.description = description;
+    if (privacy !== undefined) data.privacy = privacy;
+    if (req.file) data.cover_url = req.file.location;
 
-    vals.push(id);
-    const result = await db.query(
-      `UPDATE groups SET ${setParts.join(', ')} WHERE id = $${idx} RETURNING *`,
-      vals
-    );
-    res.json(result.rows[0]);
+    if (Object.keys(data).length === 0) return res.status(400).json({ error: 'Nothing to update' });
+
+    const result = await prisma.groups.update({
+      where: { id: BigInt(id) },
+      data,
+    });
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -77,11 +69,12 @@ const updateGroup = async (req, res, next) => {
 
 const deleteGroup = async (req, res, next) => {
   try {
-    const result = await db.query(
-      'DELETE FROM groups WHERE id = $1 AND owner_id = $2 RETURNING id',
-      [req.params.id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(403).json({ error: 'Not the group owner' });
+    const group = await prisma.groups.findFirst({
+      where: { id: BigInt(req.params.id), owner_id: BigInt(req.user.id) },
+    });
+    if (!group) return res.status(403).json({ error: 'Not the group owner' });
+
+    await prisma.groups.delete({ where: { id: group.id } });
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -90,31 +83,46 @@ const deleteGroup = async (req, res, next) => {
 
 const getGroup = async (req, res, next) => {
   try {
-    const userId = req.user?.id || null;
-    let query, params;
+    const groupId = BigInt(req.params.id);
+    const userId = req.user?.id ? BigInt(req.user.id) : null;
+
+    const group = await prisma.groups.findUnique({
+      where: { id: groupId },
+      include: {
+        users: {
+          select: { username: true, avatar_url: true },
+        },
+      },
+    });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+
+    let is_member = false;
+    let my_role = null;
+    let join_requested = false;
+
     if (userId) {
-      query = `
-        SELECT g.*, u.username AS owner_username, u.avatar_url AS owner_avatar,
-               g.members_count,
-               EXISTS(SELECT 1 FROM group_members WHERE group_id = g.id AND user_id = $2) AS is_member,
-               (SELECT role FROM group_members WHERE group_id = g.id AND user_id = $2) AS my_role,
-               EXISTS(SELECT 1 FROM group_join_requests WHERE group_id = g.id AND user_id = $2 AND status = 'pending') AS join_requested
-        FROM groups g JOIN users u ON u.id = g.owner_id
-        WHERE g.id = $1`;
-      params = [req.params.id, userId];
-    } else {
-      query = `
-        SELECT g.*, u.username AS owner_username, u.avatar_url AS owner_avatar,
-               g.members_count,
-               FALSE AS is_member, NULL AS my_role, FALSE AS join_requested
-        FROM groups g JOIN users u ON u.id = g.owner_id
-        WHERE g.id = $1`;
-      params = [req.params.id];
+      const membership = await prisma.group_members.findFirst({
+        where: { group_id: groupId, user_id: userId },
+      });
+      is_member = !!membership;
+      my_role = membership?.role || null;
+
+      if (!is_member) {
+        const request = await prisma.group_join_requests.findFirst({
+          where: { group_id: groupId, user_id: userId, status: 'pending' },
+        });
+        join_requested = !!request;
+      }
     }
 
-    const result = await db.query(query, params);
-    if (!result.rows[0]) return res.status(404).json({ error: 'Group not found' });
-    res.json(result.rows[0]);
+    res.json({
+      ...group,
+      owner_username: group.users.username,
+      owner_avatar: group.users.avatar_url,
+      is_member,
+      my_role,
+      join_requested,
+    });
   } catch (err) {
     next(err);
   }
@@ -122,53 +130,81 @@ const getGroup = async (req, res, next) => {
 
 const listGroups = async (req, res, next) => {
   try {
-    const userId = req.user?.id || null;
+    const userId = req.user?.id ? BigInt(req.user.id) : null;
     const q = (req.query.q || '').trim();
 
-    const params = [];
-    let pIdx = 1;
-    const memberExpr = userId
-      ? `EXISTS(SELECT 1 FROM group_members WHERE group_id = g.id AND user_id = $${pIdx++})`
-      : 'FALSE';
-    if (userId) params.push(userId);
-
-    let whereExtra = '';
+    // Build public groups query
+    const publicWhere = { privacy: 'public' };
     if (q) {
-      whereExtra = `AND (g.name ILIKE $${pIdx} OR g.description ILIKE $${pIdx})`;
-      params.push(`%${sanitizeLike(q)}%`);
-      pIdx++;
+      publicWhere.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+      ];
     }
 
-    const publicResult = await db.query(
-      `SELECT g.id, g.name, g.description, g.cover_url, g.privacy, g.created_at,
-              u.username AS owner_username,
-              g.members_count,
-              ${memberExpr} AS is_member
-       FROM groups g JOIN users u ON u.id = g.owner_id
-       WHERE g.privacy = 'public' ${whereExtra}
-       ORDER BY members_count DESC, g.created_at DESC
-       LIMIT 50`,
-      params
-    );
+    const publicGroups = await prisma.groups.findMany({
+      where: publicWhere,
+      orderBy: [{ members_count: 'desc' }, { created_at: 'desc' }],
+      take: 50,
+      include: {
+        users: { select: { username: true } },
+      },
+    });
+
+    // Check membership for each public group if logged in
+    let publicResult = publicGroups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      description: g.description,
+      cover_url: g.cover_url,
+      privacy: g.privacy,
+      created_at: g.created_at,
+      owner_username: g.users.username,
+      members_count: g.members_count,
+      is_member: false,
+    }));
+
+    if (userId) {
+      const membershipIds = await prisma.group_members.findMany({
+        where: {
+          user_id: userId,
+          group_id: { in: publicGroups.map((g) => g.id) },
+        },
+        select: { group_id: true },
+      });
+      const memberSet = new Set(membershipIds.map((m) => m.group_id.toString()));
+      publicResult = publicResult.map((g) => ({
+        ...g,
+        is_member: memberSet.has(g.id.toString()),
+      }));
+    }
 
     let mine = [];
     if (userId) {
-      const myResult = await db.query(
-        `SELECT g.id, g.name, g.description, g.cover_url, g.privacy, g.created_at,
-                u.username AS owner_username,
-                g.members_count,
-                TRUE AS is_member, gm.role AS my_role
-         FROM group_members gm
-         JOIN groups g ON g.id = gm.group_id
-         JOIN users u ON u.id = g.owner_id
-         WHERE gm.user_id = $1
-         ORDER BY gm.joined_at DESC`,
-        [userId]
-      );
-      mine = myResult.rows;
+      const myMemberships = await prisma.group_members.findMany({
+        where: { user_id: userId },
+        orderBy: { joined_at: 'desc' },
+        include: {
+          groups: {
+            include: { users: { select: { username: true } } },
+          },
+        },
+      });
+      mine = myMemberships.map((gm) => ({
+        id: gm.groups.id,
+        name: gm.groups.name,
+        description: gm.groups.description,
+        cover_url: gm.groups.cover_url,
+        privacy: gm.groups.privacy,
+        created_at: gm.groups.created_at,
+        owner_username: gm.groups.users.username,
+        members_count: gm.groups.members_count,
+        is_member: true,
+        my_role: gm.role,
+      }));
     }
 
-    res.json({ public: publicResult.rows, mine });
+    res.json({ public: publicResult, mine });
   } catch (err) {
     next(err);
   }
@@ -177,36 +213,42 @@ const listGroups = async (req, res, next) => {
 const joinLeaveGroup = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const existing = await db.query(
-      'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2',
-      [id, req.user.id]
-    );
+    const groupId = BigInt(id);
+    const userId = BigInt(req.user.id);
 
-    if (existing.rows[0]) {
-      const group = await db.query('SELECT owner_id FROM groups WHERE id = $1', [id]);
-      if (group.rows[0]?.owner_id === req.user.id)
+    const existing = await prisma.group_members.findFirst({
+      where: { group_id: groupId, user_id: userId },
+    });
+
+    if (existing) {
+      const group = await prisma.groups.findUnique({
+        where: { id: groupId },
+        select: { owner_id: true },
+      });
+      if (group?.owner_id === userId)
         return res.status(400).json({ error: 'Owner cannot leave group' });
-      await db.query('DELETE FROM group_members WHERE id = $1', [existing.rows[0].id]);
+      await prisma.group_members.delete({ where: { id: existing.id } });
       return res.json({ member: false, requested: false });
     }
 
-    const group = await db.query('SELECT privacy FROM groups WHERE id = $1', [id]);
-    if (!group.rows[0]) return res.status(404).json({ error: 'Group not found' });
+    const group = await prisma.groups.findUnique({
+      where: { id: groupId },
+      select: { privacy: true },
+    });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
 
-    if (group.rows[0].privacy === 'private') {
-      await db.query(
-        `INSERT INTO group_join_requests (group_id, user_id)
-         VALUES ($1, $2) ON CONFLICT (group_id, user_id) DO UPDATE SET status = 'pending'`,
-        [id, req.user.id]
-      );
+    if (group.privacy === 'private') {
+      await prisma.group_join_requests.upsert({
+        where: { group_id_user_id: { group_id: groupId, user_id: userId } },
+        update: { status: 'pending' },
+        create: { group_id: groupId, user_id: userId, status: 'pending' },
+      });
       return res.json({ member: false, requested: true });
     }
 
-    await db.query('INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)', [
-      id,
-      req.user.id,
-      'member',
-    ]);
+    await prisma.group_members.create({
+      data: { group_id: groupId, user_id: userId, role: 'member' },
+    });
     res.json({ member: true, requested: false });
   } catch (err) {
     next(err);
@@ -216,21 +258,34 @@ const joinLeaveGroup = async (req, res, next) => {
 const listJoinRequests = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const admin = await db.query(
-      'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2 AND role = $3',
-      [id, req.user.id, 'admin']
-    );
-    if (!admin.rows[0]) return res.status(403).json({ error: 'Not a group admin' });
+    const groupId = BigInt(id);
 
-    const result = await db.query(
-      `SELECT jr.id, jr.user_id, jr.status, jr.created_at,
-              u.username, u.full_name, u.avatar_url
-       FROM group_join_requests jr JOIN users u ON u.id = jr.user_id
-       WHERE jr.group_id = $1 AND jr.status = 'pending'
-       ORDER BY jr.created_at ASC`,
-      [id]
-    );
-    res.json(result.rows);
+    const admin = await prisma.group_members.findFirst({
+      where: { group_id: groupId, user_id: BigInt(req.user.id), role: 'admin' },
+    });
+    if (!admin) return res.status(403).json({ error: 'Not a group admin' });
+
+    const requests = await prisma.group_join_requests.findMany({
+      where: { group_id: groupId, status: 'pending' },
+      orderBy: { created_at: 'asc' },
+      include: {
+        users: {
+          select: { id: true, username: true, full_name: true, avatar_url: true },
+        },
+      },
+    });
+
+    const result = requests.map((jr) => ({
+      id: jr.id,
+      user_id: jr.user_id,
+      status: jr.status,
+      created_at: jr.created_at,
+      username: jr.users.username,
+      full_name: jr.users.full_name,
+      avatar_url: jr.users.avatar_url,
+    }));
+
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -240,33 +295,33 @@ const respondToJoinRequest = async (req, res, next) => {
   try {
     const { id, requestId } = req.params;
     const { action } = req.body;
+    const groupId = BigInt(id);
+
     if (!['approve', 'deny'].includes(action))
       return res.status(400).json({ error: 'action must be approve or deny' });
 
-    const admin = await db.query(
-      'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2 AND role = $3',
-      [id, req.user.id, 'admin']
-    );
-    if (!admin.rows[0]) return res.status(403).json({ error: 'Not a group admin' });
+    const admin = await prisma.group_members.findFirst({
+      where: { group_id: groupId, user_id: BigInt(req.user.id), role: 'admin' },
+    });
+    if (!admin) return res.status(403).json({ error: 'Not a group admin' });
 
-    const reqRow = await db.query(
-      "SELECT * FROM group_join_requests WHERE id = $1 AND group_id = $2 AND status = 'pending'",
-      [requestId, id]
-    );
-    if (!reqRow.rows[0]) return res.status(404).json({ error: 'Request not found' });
+    const reqRow = await prisma.group_join_requests.findFirst({
+      where: { id: BigInt(requestId), group_id: groupId, status: 'pending' },
+    });
+    if (!reqRow) return res.status(404).json({ error: 'Request not found' });
 
     const newStatus = action === 'approve' ? 'approved' : 'denied';
-    await db.query('UPDATE group_join_requests SET status = $1 WHERE id = $2', [
-      newStatus,
-      requestId,
-    ]);
+    await prisma.group_join_requests.update({
+      where: { id: reqRow.id },
+      data: { status: newStatus },
+    });
 
     if (action === 'approve') {
-      await db.query(
-        `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')
-         ON CONFLICT (group_id, user_id) DO NOTHING`,
-        [id, reqRow.rows[0].user_id]
-      );
+      await prisma.group_members.upsert({
+        where: { group_id_user_id: { group_id: groupId, user_id: reqRow.user_id } },
+        update: {},
+        create: { group_id: groupId, user_id: reqRow.user_id, role: 'member' },
+      });
     }
     res.json({ success: true, status: newStatus });
   } catch (err) {
@@ -277,50 +332,67 @@ const respondToJoinRequest = async (req, res, next) => {
 const getGroupPosts = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const userId = req.user?.id || null;
+    const userId = req.user?.id ? BigInt(req.user.id) : null;
+    const groupId = BigInt(id);
 
-    const group = await db.query('SELECT privacy FROM groups WHERE id = $1', [id]);
-    if (!group.rows[0]) return res.status(404).json({ error: 'Group not found' });
+    const group = await prisma.groups.findUnique({
+      where: { id: groupId },
+      select: { privacy: true },
+    });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
 
-    if (group.rows[0].privacy === 'private') {
+    if (group.privacy === 'private') {
       if (!userId) return res.status(403).json({ error: 'Private group' });
-      const member = await db.query(
-        'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2',
-        [id, userId]
-      );
-      if (!member.rows[0]) return res.status(403).json({ error: 'Members only' });
+      const member = await prisma.group_members.findFirst({
+        where: { group_id: groupId, user_id: userId },
+      });
+      if (!member) return res.status(403).json({ error: 'Members only' });
     }
 
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const offset = parseInt(req.query.offset) || 0;
-    const result = await db.query(
-      `SELECT p.*, u.username, u.full_name, u.avatar_url, u.is_verified,
-              p.likes_count,
-              p.comments_count,
-              ${userId ? `EXISTS(SELECT 1 FROM likes WHERE post_id = p.id AND user_id = $4)` : 'FALSE'} AS liked_by_me
-       FROM posts p JOIN users u ON u.id = p.user_id
-       WHERE p.group_id = $1 AND p.deleted_at IS NULL
-       ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
-      userId ? [id, limit, offset, userId] : [id, limit, offset]
-    );
-    res.json(result.rows);
+
+    const posts = await prisma.posts.findMany({
+      where: { group_id: groupId, deleted_at: null },
+      orderBy: { created_at: 'desc' },
+      take: limit,
+      skip: offset,
+      include: {
+        users: {
+          select: {
+            id: true,
+            username: true,
+            full_name: true,
+            avatar_url: true,
+            is_verified: true,
+          },
+        },
+      },
+    });
+
+    // Check if current user liked each post
+    let likedPostIds = new Set();
+    if (userId) {
+      const likes = await prisma.likes.findMany({
+        where: { post_id: { in: posts.map((p) => p.id) }, user_id: userId },
+        select: { post_id: true },
+      });
+      likedPostIds = new Set(likes.map((l) => l.post_id.toString()));
+    }
+
+    const result = posts.map((p) => ({
+      ...p,
+      username: p.users.username,
+      full_name: p.users.full_name,
+      avatar_url: p.users.avatar_url,
+      is_verified: p.users.is_verified,
+      liked_by_me: likedPostIds.has(p.id.toString()),
+    }));
+
+    res.json(result);
   } catch (err) {
     next(err);
   }
-};
-
-module.exports = {
-  createGroup,
-  updateGroup,
-  deleteGroup,
-  getGroup,
-  listGroups,
-  joinLeaveGroup,
-  listJoinRequests,
-  respondToJoinRequest,
-  getGroupPosts,
-  inviteToGroup,
-  respondToInvite,
 };
 
 // ─── Invite friends to a group ───────────────────────────────────────────────
@@ -329,6 +401,7 @@ async function inviteToGroup(req, res, next) {
   try {
     const { id } = req.params;
     const { user_ids } = req.body; // array of user IDs to invite
+    const groupId = BigInt(id);
 
     if (!Array.isArray(user_ids) || user_ids.length === 0)
       return res.status(400).json({ error: 'user_ids must be a non-empty array' });
@@ -341,22 +414,23 @@ async function inviteToGroup(req, res, next) {
     }
 
     // Inviter must be a member
-    const member = await db.query(
-      'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2',
-      [id, req.user.id]
-    );
-    if (!member.rows[0])
-      return res.status(403).json({ error: 'You must be a member to invite others' });
+    const member = await prisma.group_members.findFirst({
+      where: { group_id: groupId, user_id: BigInt(req.user.id) },
+    });
+    if (!member) return res.status(403).json({ error: 'You must be a member to invite others' });
 
-    const group = await db.query('SELECT id, name FROM groups WHERE id = $1', [id]);
-    if (!group.rows[0]) return res.status(404).json({ error: 'Group not found' });
+    const group = await prisma.groups.findUnique({
+      where: { id: groupId },
+      select: { id: true, name: true },
+    });
+    if (!group) return res.status(404).json({ error: 'Group not found' });
 
     // Batch check: find which user_ids are already members
-    const existingMembers = await db.query(
-      'SELECT user_id FROM group_members WHERE group_id = $1 AND user_id = ANY($2::int[])',
-      [id, user_ids]
-    );
-    const memberSet = new Set(existingMembers.rows.map((r) => r.user_id));
+    const existingMembers = await prisma.group_members.findMany({
+      where: { group_id: groupId, user_id: { in: user_ids.map((uid) => BigInt(uid)) } },
+      select: { user_id: true },
+    });
+    const memberSet = new Set(existingMembers.map((r) => Number(r.user_id)));
 
     const results = [];
     const toInvite = user_ids.filter((uid) => !memberSet.has(uid));
@@ -370,12 +444,16 @@ async function inviteToGroup(req, res, next) {
 
     // Batch invite the rest
     for (const uid of toInvite) {
-      await db.query(
-        `INSERT INTO group_invites (group_id, inviter_id, invitee_id, status)
-         VALUES ($1, $2, $3, 'pending')
-         ON CONFLICT (group_id, invitee_id) DO UPDATE SET status = 'pending', inviter_id = $2`,
-        [id, req.user.id, uid]
-      );
+      await prisma.group_invites.upsert({
+        where: { group_id_invitee_id: { group_id: groupId, invitee_id: BigInt(uid) } },
+        update: { status: 'pending', inviter_id: BigInt(req.user.id) },
+        create: {
+          group_id: groupId,
+          inviter_id: BigInt(req.user.id),
+          invitee_id: BigInt(uid),
+          status: 'pending',
+        },
+      });
 
       // Send in-app notification
       await emitNotification(uid, {
@@ -397,27 +475,29 @@ async function respondToInvite(req, res, next) {
   try {
     const { id } = req.params;
     const { action } = req.body;
+    const groupId = BigInt(id);
+    const userId = BigInt(req.user.id);
+
     if (!['accept', 'decline'].includes(action))
       return res.status(400).json({ error: 'action must be accept or decline' });
 
-    const invite = await db.query(
-      "SELECT * FROM group_invites WHERE group_id = $1 AND invitee_id = $2 AND status = 'pending'",
-      [id, req.user.id]
-    );
-    if (!invite.rows[0]) return res.status(404).json({ error: 'No pending invite found' });
+    const invite = await prisma.group_invites.findFirst({
+      where: { group_id: groupId, invitee_id: userId, status: 'pending' },
+    });
+    if (!invite) return res.status(404).json({ error: 'No pending invite found' });
 
     const newStatus = action === 'accept' ? 'accepted' : 'declined';
-    await db.query('UPDATE group_invites SET status = $1 WHERE id = $2', [
-      newStatus,
-      invite.rows[0].id,
-    ]);
+    await prisma.group_invites.update({
+      where: { id: invite.id },
+      data: { status: newStatus },
+    });
 
     if (action === 'accept') {
-      await db.query(
-        `INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, 'member')
-         ON CONFLICT (group_id, user_id) DO NOTHING`,
-        [id, req.user.id]
-      );
+      await prisma.group_members.upsert({
+        where: { group_id_user_id: { group_id: groupId, user_id: userId } },
+        update: {},
+        create: { group_id: groupId, user_id: userId, role: 'member' },
+      });
     }
 
     res.json({ success: true, status: newStatus });
@@ -425,3 +505,17 @@ async function respondToInvite(req, res, next) {
     next(err);
   }
 }
+
+module.exports = {
+  createGroup,
+  updateGroup,
+  deleteGroup,
+  getGroup,
+  listGroups,
+  joinLeaveGroup,
+  listJoinRequests,
+  respondToJoinRequest,
+  getGroupPosts,
+  inviteToGroup,
+  respondToInvite,
+};

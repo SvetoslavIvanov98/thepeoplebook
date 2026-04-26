@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 // POST /api/reports — submit a content report
 const createReport = async (req, res, next) => {
@@ -6,7 +6,9 @@ const createReport = async (req, res, next) => {
     const { post_id, comment_id, reported_user_id, reason, description } = req.body;
 
     if (!post_id && !comment_id && !reported_user_id) {
-      return res.status(400).json({ error: 'Either post_id, comment_id, or reported_user_id is required' });
+      return res
+        .status(400)
+        .json({ error: 'Either post_id, comment_id, or reported_user_id is required' });
     }
     if (reported_user_id && Number(reported_user_id) === req.user.id) {
       return res.status(400).json({ error: 'You cannot report yourself' });
@@ -17,26 +19,31 @@ const createReport = async (req, res, next) => {
     }
 
     // Prevent duplicate pending reports from same user on same target
-    const existing = await db.query(
-      `SELECT id FROM content_reports
-       WHERE reporter_id = $1 AND status = 'pending'
-         AND (
-           ($2::bigint IS NOT NULL AND post_id = $2) OR
-           ($3::bigint IS NOT NULL AND comment_id = $3) OR
-           ($4::bigint IS NOT NULL AND reported_user_id = $4)
-         )`,
-      [req.user.id, post_id || null, comment_id || null, reported_user_id || null]
-    );
-    if (existing.rows.length) {
+    const existingWhere = {
+      reporter_id: BigInt(req.user.id),
+      status: 'pending',
+    };
+    if (post_id) existingWhere.post_id = BigInt(post_id);
+    if (comment_id) existingWhere.comment_id = BigInt(comment_id);
+    if (reported_user_id) existingWhere.reported_user_id = BigInt(reported_user_id);
+
+    const existing = await prisma.content_reports.findFirst({ where: existingWhere });
+    if (existing) {
       return res.status(409).json({ error: 'You already have a pending report for this content' });
     }
 
-    const result = await db.query(
-      `INSERT INTO content_reports (reporter_id, post_id, comment_id, reported_user_id, reason, description)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, status, created_at`,
-      [req.user.id, post_id || null, comment_id || null, reported_user_id || null, reason, description || null]
-    );
-    res.status(201).json(result.rows[0]);
+    const report = await prisma.content_reports.create({
+      data: {
+        reporter_id: BigInt(req.user.id),
+        post_id: post_id ? BigInt(post_id) : null,
+        comment_id: comment_id ? BigInt(comment_id) : null,
+        reported_user_id: reported_user_id ? BigInt(reported_user_id) : null,
+        reason,
+        description: description || null,
+      },
+      select: { id: true, status: true, created_at: true },
+    });
+    res.status(201).json(report);
   } catch (err) {
     next(err);
   }
@@ -45,16 +52,22 @@ const createReport = async (req, res, next) => {
 // GET /api/reports/mine — user's own reports & decisions (transparency)
 const getMyReports = async (req, res, next) => {
   try {
-    const result = await db.query(
-      `SELECT r.id, r.post_id, r.comment_id, r.reason, r.description, r.status, r.created_at,
-              r.decided_at
-       FROM content_reports r
-       WHERE r.reporter_id = $1
-       ORDER BY r.created_at DESC
-       LIMIT 50`,
-      [req.user.id]
-    );
-    res.json(result.rows);
+    const reports = await prisma.content_reports.findMany({
+      where: { reporter_id: BigInt(req.user.id) },
+      orderBy: { created_at: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        post_id: true,
+        comment_id: true,
+        reason: true,
+        description: true,
+        status: true,
+        created_at: true,
+        decided_at: true,
+      },
+    });
+    res.json(reports);
   } catch (err) {
     next(err);
   }
@@ -63,18 +76,38 @@ const getMyReports = async (req, res, next) => {
 // GET /api/reports/decisions — moderation decisions affecting current user (DSA Art. 17)
 const getMyDecisions = async (req, res, next) => {
   try {
-    const result = await db.query(
-      `SELECT d.id, d.action_type, d.reason, d.legal_basis, d.appealed,
-              d.appeal_outcome, d.appeal_note, d.created_at,
-              r.reason AS report_reason
-       FROM moderation_decisions d
-       LEFT JOIN content_reports r ON r.id = d.report_id
-       WHERE d.target_user_id = $1
-       ORDER BY d.created_at DESC
-       LIMIT 50`,
-      [req.user.id]
-    );
-    res.json(result.rows);
+    const decisions = await prisma.moderation_decisions.findMany({
+      where: { target_user_id: BigInt(req.user.id) },
+      orderBy: { created_at: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        action_type: true,
+        reason: true,
+        legal_basis: true,
+        appealed: true,
+        appeal_outcome: true,
+        appeal_note: true,
+        created_at: true,
+        content_reports: {
+          select: { reason: true },
+        },
+      },
+    });
+
+    const result = decisions.map((d) => ({
+      id: d.id,
+      action_type: d.action_type,
+      reason: d.reason,
+      legal_basis: d.legal_basis,
+      appealed: d.appealed,
+      appeal_outcome: d.appeal_outcome,
+      appeal_note: d.appeal_note,
+      created_at: d.created_at,
+      report_reason: d.content_reports?.reason || null,
+    }));
+
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -86,24 +119,26 @@ const appealDecision = async (req, res, next) => {
     const { id } = req.params;
     const { note } = req.body;
 
-    const decision = await db.query(
-      'SELECT id, target_user_id, appealed FROM moderation_decisions WHERE id = $1',
-      [id]
-    );
-    if (!decision.rows[0]) return res.status(404).json({ error: 'Decision not found' });
-    if (decision.rows[0].target_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'You can only appeal decisions about your own content' });
+    const decision = await prisma.moderation_decisions.findUnique({
+      where: { id: BigInt(id) },
+      select: { id: true, target_user_id: true, appealed: true },
+    });
+    if (!decision) return res.status(404).json({ error: 'Decision not found' });
+    if (decision.target_user_id !== BigInt(req.user.id)) {
+      return res
+        .status(403)
+        .json({ error: 'You can only appeal decisions about your own content' });
     }
-    if (decision.rows[0].appealed) {
+    if (decision.appealed) {
       return res.status(409).json({ error: 'This decision has already been appealed' });
     }
 
-    const result = await db.query(
-      `UPDATE moderation_decisions SET appealed = TRUE, appeal_note = $1
-       WHERE id = $2 RETURNING id, appealed`,
-      [note || null, id]
-    );
-    res.json(result.rows[0]);
+    const updated = await prisma.moderation_decisions.update({
+      where: { id: BigInt(id) },
+      data: { appealed: true, appeal_note: note || null },
+      select: { id: true, appealed: true },
+    });
+    res.json(updated);
   } catch (err) {
     next(err);
   }

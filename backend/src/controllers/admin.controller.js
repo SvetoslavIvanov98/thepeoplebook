@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const { emitNotification } = require('../services/notification.service');
 const { sanitizeLike } = require('../utils/sanitize');
 const { revokeAllTokens } = require('../services/auth.service');
@@ -6,31 +6,42 @@ const { revokeAllTokens } = require('../services/auth.service');
 // GET /api/admin/stats
 const getStats = async (req, res, next) => {
   try {
-    const [users, posts, comments, groups, stories, pendingReports] = await Promise.all([
-      db.query('SELECT COUNT(*) FROM users'),
-      db.query('SELECT COUNT(*) FROM posts WHERE deleted_at IS NULL'),
-      db.query('SELECT COUNT(*) FROM comments WHERE deleted_at IS NULL'),
-      db.query('SELECT COUNT(*) FROM groups'),
-      db.query('SELECT COUNT(*) FROM stories'),
-      db.query("SELECT COUNT(*) FROM content_reports WHERE status = 'pending'"),
-    ]);
-
-    const [newUsersToday, newPostsToday] = await Promise.all([
-      db.query("SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '24 hours'"),
-      db.query(
-        "SELECT COUNT(*) FROM posts WHERE created_at >= NOW() - INTERVAL '24 hours' AND deleted_at IS NULL"
-      ),
+    const [
+      totalUsers,
+      totalPosts,
+      totalComments,
+      totalGroups,
+      totalStories,
+      pendingReports,
+      newUsersToday,
+      newPostsToday,
+    ] = await Promise.all([
+      prisma.users.count(),
+      prisma.posts.count({ where: { deleted_at: null } }),
+      prisma.comments.count({ where: { deleted_at: null } }),
+      prisma.groups.count(),
+      prisma.stories.count(),
+      prisma.content_reports.count({ where: { status: 'pending' } }),
+      prisma.users.count({
+        where: { created_at: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+      }),
+      prisma.posts.count({
+        where: {
+          created_at: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+          deleted_at: null,
+        },
+      }),
     ]);
 
     res.json({
-      total_users: parseInt(users.rows[0].count, 10),
-      total_posts: parseInt(posts.rows[0].count, 10),
-      total_comments: parseInt(comments.rows[0].count, 10),
-      total_groups: parseInt(groups.rows[0].count, 10),
-      total_stories: parseInt(stories.rows[0].count, 10),
-      pending_reports: parseInt(pendingReports.rows[0].count, 10),
-      new_users_today: parseInt(newUsersToday.rows[0].count, 10),
-      new_posts_today: parseInt(newPostsToday.rows[0].count, 10),
+      total_users: totalUsers,
+      total_posts: totalPosts,
+      total_comments: totalComments,
+      total_groups: totalGroups,
+      total_stories: totalStories,
+      pending_reports: pendingReports,
+      new_users_today: newUsersToday,
+      new_posts_today: newPostsToday,
     });
   } catch (err) {
     next(err);
@@ -43,35 +54,46 @@ const getUsers = async (req, res, next) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
-    const q = req.query.q ? `%${sanitizeLike(req.query.q)}%` : null;
+    const q = req.query.q ? req.query.q.trim() : null;
 
-    const params = q ? [q, limit, offset] : [limit, offset];
-    const whereClause = q
-      ? 'WHERE u.username ILIKE $1 OR u.email ILIKE $1 OR u.full_name ILIKE $1'
-      : '';
-    const limitParam = q ? '$2' : '$1';
-    const offsetParam = q ? '$3' : '$2';
+    const where = {};
+    if (q) {
+      where.OR = [
+        { username: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { full_name: { contains: q, mode: 'insensitive' } },
+      ];
+    }
 
-    const [rows, total] = await Promise.all([
-      db.query(
-        `SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.is_verified, u.role, u.is_banned, u.created_at,
-                u.post_count,
-                u.following_count,
-                u.followers_count
-         FROM users u
-         ${whereClause}
-         ORDER BY u.created_at DESC
-         LIMIT ${limitParam} OFFSET ${offsetParam}`,
-        params
-      ),
-      db.query(`SELECT COUNT(*) FROM users u ${whereClause}`, q ? [q] : []),
+    const [users, total] = await Promise.all([
+      prisma.users.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          full_name: true,
+          avatar_url: true,
+          is_verified: true,
+          role: true,
+          is_banned: true,
+          created_at: true,
+          post_count: true,
+          following_count: true,
+          followers_count: true,
+        },
+      }),
+      prisma.users.count({ where }),
     ]);
 
     res.json({
-      users: rows.rows,
-      total: parseInt(total.rows[0].count, 10),
+      users,
+      total,
       page,
-      pages: Math.ceil(parseInt(total.rows[0].count, 10) / limit),
+      pages: Math.ceil(total / limit),
     });
   } catch (err) {
     next(err);
@@ -90,12 +112,18 @@ const setUserRole = async (req, res, next) => {
     if (parseInt(id, 10) === req.user.id) {
       return res.status(400).json({ error: 'Cannot change your own role' });
     }
-    const result = await db.query(
-      'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, username, role',
-      [role, id]
-    );
-    if (!result.rows[0]) return res.status(404).json({ error: 'User not found' });
-    res.json(result.rows[0]);
+
+    try {
+      const result = await prisma.users.update({
+        where: { id: BigInt(id) },
+        data: { role },
+        select: { id: true, username: true, role: true },
+      });
+      res.json(result);
+    } catch (e) {
+      if (e.code === 'P2025') return res.status(404).json({ error: 'User not found' });
+      throw e;
+    }
   } catch (err) {
     next(err);
   }
@@ -114,23 +142,27 @@ const setBan = async (req, res, next) => {
     }
 
     // Prevent banning other admins
-    const target = await db.query('SELECT role FROM users WHERE id = $1', [id]);
-    if (!target.rows[0]) return res.status(404).json({ error: 'User not found' });
-    if (target.rows[0].role === 'admin' && banned) {
+    const target = await prisma.users.findUnique({
+      where: { id: BigInt(id) },
+      select: { role: true },
+    });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.role === 'admin' && banned) {
       return res.status(400).json({ error: 'Cannot ban another admin' });
     }
 
-    const result = await db.query(
-      'UPDATE users SET is_banned = $1 WHERE id = $2 RETURNING id, username, is_banned',
-      [banned, id]
-    );
+    const result = await prisma.users.update({
+      where: { id: BigInt(id) },
+      data: { is_banned: banned },
+      select: { id: true, username: true, is_banned: true },
+    });
 
     // Revoke all sessions when banning so the user is immediately logged out
     if (banned) {
       await revokeAllTokens(parseInt(id, 10));
     }
 
-    res.json(result.rows[0]);
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -142,36 +174,45 @@ const getPosts = async (req, res, next) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
-    const q = req.query.q ? `%${sanitizeLike(req.query.q)}%` : null;
+    const q = req.query.q ? req.query.q.trim() : null;
 
-    const params = q ? [q, limit, offset] : [limit, offset];
-    const whereClause = q
-      ? 'WHERE p.content ILIKE $1 AND p.deleted_at IS NULL'
-      : 'WHERE p.deleted_at IS NULL';
-    const limitParam = q ? '$2' : '$1';
-    const offsetParam = q ? '$3' : '$2';
+    const where = { deleted_at: null };
+    if (q) {
+      where.content = { contains: q, mode: 'insensitive' };
+    }
 
-    const [rows, total] = await Promise.all([
-      db.query(
-        `SELECT p.id, p.content, p.media_urls, p.created_at,
-                u.id AS user_id, u.username, u.avatar_url,
-                p.likes_count AS like_count,
-                p.comments_count AS comment_count
-         FROM posts p
-         JOIN users u ON u.id = p.user_id
-         ${whereClause}
-         ORDER BY p.created_at DESC
-         LIMIT ${limitParam} OFFSET ${offsetParam}`,
-        params
-      ),
-      db.query(`SELECT COUNT(*) FROM posts p ${whereClause}`, q ? [q] : []),
+    const [posts, total] = await Promise.all([
+      prisma.posts.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+        include: {
+          users: {
+            select: { id: true, username: true, avatar_url: true },
+          },
+        },
+      }),
+      prisma.posts.count({ where }),
     ]);
 
+    const result = posts.map((p) => ({
+      id: p.id,
+      content: p.content,
+      media_urls: p.media_urls,
+      created_at: p.created_at,
+      user_id: p.users.id,
+      username: p.users.username,
+      avatar_url: p.users.avatar_url,
+      like_count: p.likes_count,
+      comment_count: p.comments_count,
+    }));
+
     res.json({
-      posts: rows.rows,
-      total: parseInt(total.rows[0].count, 10),
+      posts: result,
+      total,
       page,
-      pages: Math.ceil(parseInt(total.rows[0].count, 10) / limit),
+      pages: Math.ceil(total / limit),
     });
   } catch (err) {
     next(err);
@@ -182,15 +223,22 @@ const getPosts = async (req, res, next) => {
 const deletePost = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const result = await db.query(
-      'UPDATE posts SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING id, user_id',
-      [id]
-    );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Post not found' });
 
-    // Update the post owner's denormalized post_count
-    await db.query('UPDATE users SET post_count = GREATEST(0, post_count - 1) WHERE id = $1', [
-      result.rows[0].user_id,
+    const post = await prisma.posts.findFirst({
+      where: { id: BigInt(id), deleted_at: null },
+      select: { id: true, user_id: true },
+    });
+    if (!post) return res.status(404).json({ error: 'Post not found' });
+
+    await prisma.$transaction([
+      prisma.posts.update({
+        where: { id: post.id },
+        data: { deleted_at: new Date() },
+      }),
+      prisma.users.update({
+        where: { id: post.user_id },
+        data: { post_count: { decrement: 1 } },
+      }),
     ]);
 
     res.json({ success: true });
@@ -206,26 +254,35 @@ const getGroups = async (req, res, next) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
 
-    const [rows, total] = await Promise.all([
-      db.query(
-        `SELECT g.id, g.name, g.description, g.cover_url, g.privacy, g.created_at,
-                u.username AS owner_username,
-                g.members_count AS member_count,
-                g.post_count
-         FROM groups g
-         JOIN users u ON u.id = g.owner_id
-         ORDER BY g.created_at DESC
-         LIMIT $1 OFFSET $2`,
-        [limit, offset]
-      ),
-      db.query('SELECT COUNT(*) FROM groups'),
+    const [groups, total] = await Promise.all([
+      prisma.groups.findMany({
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+        include: {
+          users: { select: { username: true } },
+        },
+      }),
+      prisma.groups.count(),
     ]);
 
+    const result = groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      description: g.description,
+      cover_url: g.cover_url,
+      privacy: g.privacy,
+      created_at: g.created_at,
+      owner_username: g.users.username,
+      member_count: g.members_count,
+      post_count: g.post_count,
+    }));
+
     res.json({
-      groups: rows.rows,
-      total: parseInt(total.rows[0].count, 10),
+      groups: result,
+      total,
       page,
-      pages: Math.ceil(parseInt(total.rows[0].count, 10) / limit),
+      pages: Math.ceil(total / limit),
     });
   } catch (err) {
     next(err);
@@ -236,9 +293,13 @@ const getGroups = async (req, res, next) => {
 const deleteGroup = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const result = await db.query('DELETE FROM groups WHERE id = $1 RETURNING id', [id]);
-    if (!result.rows[0]) return res.status(404).json({ error: 'Group not found' });
-    res.json({ success: true });
+    try {
+      await prisma.groups.delete({ where: { id: BigInt(id) } });
+      res.json({ success: true });
+    } catch (e) {
+      if (e.code === 'P2025') return res.status(404).json({ error: 'Group not found' });
+      throw e;
+    }
   } catch (err) {
     next(err);
   }
@@ -252,46 +313,68 @@ const getReports = async (req, res, next) => {
     const offset = (page - 1) * limit;
     const status = req.query.status || null;
 
-    const params = status ? [status, limit, offset] : [limit, offset];
-    const whereClause = status ? 'WHERE r.status = $1' : '';
-    const limitParam = status ? '$2' : '$1';
-    const offsetParam = status ? '$3' : '$2';
+    const where = {};
+    if (status) where.status = status;
 
-    const [rows, total] = await Promise.all([
-      db.query(
-        `SELECT r.id, r.reason, r.description, r.status, r.created_at, r.decided_at,
-                r.post_id, r.comment_id, r.reported_user_id,
-                reporter.username AS reporter_username,
-                CASE
-                  WHEN r.post_id IS NOT NULL THEN p.content
-                  WHEN r.comment_id IS NOT NULL THEN c.content
-                  ELSE NULL
-                END AS target_content,
-                CASE
-                  WHEN r.post_id IS NOT NULL THEN pu.username
-                  WHEN r.comment_id IS NOT NULL THEN cu.username
-                  ELSE ru.username
-                END AS target_username
-         FROM content_reports r
-         JOIN users reporter ON reporter.id = r.reporter_id
-         LEFT JOIN posts p ON p.id = r.post_id
-         LEFT JOIN users pu ON pu.id = p.user_id
-         LEFT JOIN comments c ON c.id = r.comment_id
-         LEFT JOIN users cu ON cu.id = c.user_id
-         LEFT JOIN users ru ON ru.id = r.reported_user_id
-         ${whereClause}
-         ORDER BY r.created_at DESC
-         LIMIT ${limitParam} OFFSET ${offsetParam}`,
-        params
-      ),
-      db.query(`SELECT COUNT(*) FROM content_reports r ${whereClause}`, status ? [status] : []),
+    const [reports, total] = await Promise.all([
+      prisma.content_reports.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+        include: {
+          users_content_reports_reporter_idTousers: {
+            select: { username: true },
+          },
+          posts: {
+            select: { content: true, users: { select: { username: true } } },
+          },
+          comments: {
+            select: { content: true, users: { select: { username: true } } },
+          },
+          users_content_reports_reported_user_idTousers: {
+            select: { username: true },
+          },
+        },
+      }),
+      prisma.content_reports.count({ where }),
     ]);
 
+    const result = reports.map((r) => {
+      let target_content = null;
+      let target_username = null;
+
+      if (r.post_id && r.posts) {
+        target_content = r.posts.content;
+        target_username = r.posts.users?.username;
+      } else if (r.comment_id && r.comments) {
+        target_content = r.comments.content;
+        target_username = r.comments.users?.username;
+      } else if (r.reported_user_id) {
+        target_username = r.users_content_reports_reported_user_idTousers?.username;
+      }
+
+      return {
+        id: r.id,
+        reason: r.reason,
+        description: r.description,
+        status: r.status,
+        created_at: r.created_at,
+        decided_at: r.decided_at,
+        post_id: r.post_id,
+        comment_id: r.comment_id,
+        reported_user_id: r.reported_user_id,
+        reporter_username: r.users_content_reports_reporter_idTousers?.username,
+        target_content,
+        target_username,
+      };
+    });
+
     res.json({
-      reports: rows.rows,
-      total: parseInt(total.rows[0].count, 10),
+      reports: result,
+      total,
       page,
-      pages: Math.ceil(parseInt(total.rows[0].count, 10) / limit),
+      pages: Math.ceil(total / limit),
     });
   } catch (err) {
     next(err);
@@ -304,37 +387,44 @@ const resolveReport = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { action_type, reason, legal_basis, dismiss } = req.body;
+    const reportId = BigInt(id);
 
-    const result = await db.withTransaction(async (client) => {
-      const report = await client.query('SELECT * FROM content_reports WHERE id = $1', [id]);
-      if (!report.rows[0]) return { status: 404, error: 'Report not found' };
-      if (report.rows[0].status !== 'pending') {
+    const result = await prisma.$transaction(async (tx) => {
+      const report = await tx.content_reports.findUnique({ where: { id: reportId } });
+      if (!report) return { status: 404, error: 'Report not found' };
+      if (report.status !== 'pending') {
         return { status: 400, error: 'Report has already been resolved' };
       }
 
-      const rpt = report.rows[0];
-
       if (dismiss) {
-        await client.query(
-          `UPDATE content_reports SET status = 'dismissed', admin_note = $1, decided_by = $2, decided_at = NOW()
-           WHERE id = $3`,
-          [reason || null, req.user.id, id]
-        );
+        await tx.content_reports.update({
+          where: { id: reportId },
+          data: {
+            status: 'dismissed',
+            admin_note: reason || null,
+            decided_by: BigInt(req.user.id),
+            decided_at: new Date(),
+          },
+        });
         return { success: true, status: 'dismissed' };
       }
 
       // Determine the target user
       let targetUserId;
-      if (rpt.post_id) {
-        const p = await client.query('SELECT user_id FROM posts WHERE id = $1', [rpt.post_id]);
-        targetUserId = p.rows[0]?.user_id;
-      } else if (rpt.comment_id) {
-        const c = await client.query('SELECT user_id FROM comments WHERE id = $1', [
-          rpt.comment_id,
-        ]);
-        targetUserId = c.rows[0]?.user_id;
-      } else if (rpt.reported_user_id) {
-        targetUserId = rpt.reported_user_id;
+      if (report.post_id) {
+        const p = await tx.posts.findUnique({
+          where: { id: report.post_id },
+          select: { user_id: true },
+        });
+        targetUserId = p?.user_id;
+      } else if (report.comment_id) {
+        const c = await tx.comments.findUnique({
+          where: { id: report.comment_id },
+          select: { user_id: true },
+        });
+        targetUserId = c?.user_id;
+      } else if (report.reported_user_id) {
+        targetUserId = report.reported_user_id;
       }
 
       if (!targetUserId) return { status: 400, error: 'Could not determine target user' };
@@ -347,30 +437,46 @@ const resolveReport = async (req, res, next) => {
 
       // Apply the action
       if (action_type === 'content_removed') {
-        if (rpt.post_id)
-          await client.query('UPDATE posts SET deleted_at = NOW() WHERE id = $1', [rpt.post_id]);
-        if (rpt.comment_id)
-          await client.query('UPDATE comments SET deleted_at = NOW() WHERE id = $1', [
-            rpt.comment_id,
-          ]);
+        if (report.post_id)
+          await tx.posts.update({
+            where: { id: report.post_id },
+            data: { deleted_at: new Date() },
+          });
+        if (report.comment_id)
+          await tx.comments.update({
+            where: { id: report.comment_id },
+            data: { deleted_at: new Date() },
+          });
       } else if (action_type === 'account_suspended') {
-        await client.query('UPDATE users SET is_banned = TRUE WHERE id = $1', [targetUserId]);
+        await tx.users.update({
+          where: { id: targetUserId },
+          data: { is_banned: true },
+        });
         // Revoke all sessions so the ban takes effect immediately
-        await revokeAllTokens(targetUserId);
+        await revokeAllTokens(Number(targetUserId));
       }
 
       // Create statement of reasons (DSA Art. 17)
-      await client.query(
-        `INSERT INTO moderation_decisions (report_id, target_user_id, action_type, reason, legal_basis, decided_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, targetUserId, action_type, reason, legal_basis || null, req.user.id]
-      );
+      await tx.moderation_decisions.create({
+        data: {
+          report_id: reportId,
+          target_user_id: targetUserId,
+          action_type,
+          reason,
+          legal_basis: legal_basis || null,
+          decided_by: BigInt(req.user.id),
+        },
+      });
 
-      await client.query(
-        `UPDATE content_reports SET status = 'action_taken', admin_note = $1, decided_by = $2, decided_at = NOW()
-         WHERE id = $3`,
-        [reason, req.user.id, id]
-      );
+      await tx.content_reports.update({
+        where: { id: reportId },
+        data: {
+          status: 'action_taken',
+          admin_note: reason,
+          decided_by: BigInt(req.user.id),
+          decided_at: new Date(),
+        },
+      });
 
       return { success: true, status: 'action_taken', action_type, targetUserId };
     });
@@ -383,7 +489,10 @@ const resolveReport = async (req, res, next) => {
     // Notify the target user about the moderation decision (DSA Art. 17)
     // Done outside the transaction so it doesn't block the response
     if (result.targetUserId) {
-      await emitNotification(result.targetUserId, { type: 'moderation_decision', actor_id: null });
+      await emitNotification(Number(result.targetUserId), {
+        type: 'moderation_decision',
+        actor_id: null,
+      });
     }
 
     res.json({ success: result.success, status: result.status, action_type: result.action_type });
@@ -399,30 +508,44 @@ const getAppeals = async (req, res, next) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const offset = (page - 1) * limit;
 
-    const [rows, total] = await Promise.all([
-      db.query(
-        `SELECT d.id, d.action_type, d.reason, d.legal_basis, d.appeal_note,
-                d.appeal_outcome, d.created_at,
-                u.username AS target_username,
-                r.reason AS report_reason, r.description AS report_description
-         FROM moderation_decisions d
-         JOIN users u ON u.id = d.target_user_id
-         LEFT JOIN content_reports r ON r.id = d.report_id
-         WHERE d.appealed = TRUE AND d.appeal_outcome IS NULL
-         ORDER BY d.created_at DESC
-         LIMIT $1 OFFSET $2`,
-        [limit, offset]
-      ),
-      db.query(
-        `SELECT COUNT(*) FROM moderation_decisions WHERE appealed = TRUE AND appeal_outcome IS NULL`
-      ),
+    const [appeals, total] = await Promise.all([
+      prisma.moderation_decisions.findMany({
+        where: { appealed: true, appeal_outcome: null },
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+        include: {
+          users_moderation_decisions_target_user_idTousers: {
+            select: { username: true },
+          },
+          content_reports: {
+            select: { reason: true, description: true },
+          },
+        },
+      }),
+      prisma.moderation_decisions.count({
+        where: { appealed: true, appeal_outcome: null },
+      }),
     ]);
 
+    const result = appeals.map((d) => ({
+      id: d.id,
+      action_type: d.action_type,
+      reason: d.reason,
+      legal_basis: d.legal_basis,
+      appeal_note: d.appeal_note,
+      appeal_outcome: d.appeal_outcome,
+      created_at: d.created_at,
+      target_username: d.users_moderation_decisions_target_user_idTousers?.username,
+      report_reason: d.content_reports?.reason,
+      report_description: d.content_reports?.description,
+    }));
+
     res.json({
-      appeals: rows.rows,
-      total: parseInt(total.rows[0].count, 10),
+      appeals: result,
+      total,
       page,
-      pages: Math.ceil(parseInt(total.rows[0].count, 10) / limit),
+      pages: Math.ceil(total / limit),
     });
   } catch (err) {
     next(err);
@@ -435,50 +558,55 @@ const resolveAppeal = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { outcome, note } = req.body;
+    const decisionId = BigInt(id);
 
     if (!['upheld', 'overturned'].includes(outcome)) {
       return res.status(400).json({ error: 'outcome must be upheld or overturned' });
     }
 
-    const result = await db.withTransaction(async (client) => {
-      const decision = await client.query(
-        'SELECT * FROM moderation_decisions WHERE id = $1 AND appealed = TRUE',
-        [id]
-      );
-      if (!decision.rows[0]) return { status: 404, error: 'Appeal not found' };
-      if (decision.rows[0].appeal_outcome) {
+    const result = await prisma.$transaction(async (tx) => {
+      const decision = await tx.moderation_decisions.findFirst({
+        where: { id: decisionId, appealed: true },
+      });
+      if (!decision) return { status: 404, error: 'Appeal not found' };
+      if (decision.appeal_outcome) {
         return { status: 400, error: 'Appeal already resolved' };
       }
 
       // If overturning, reverse the action
       if (outcome === 'overturned') {
-        const d = decision.rows[0];
-        if (d.action_type === 'content_removed' && d.report_id) {
-          const rpt = await client.query(
-            'SELECT post_id, comment_id FROM content_reports WHERE id = $1',
-            [d.report_id]
-          );
-          if (rpt.rows[0]?.post_id)
-            await client.query('UPDATE posts SET deleted_at = NULL WHERE id = $1', [
-              rpt.rows[0].post_id,
-            ]);
-          if (rpt.rows[0]?.comment_id)
-            await client.query('UPDATE comments SET deleted_at = NULL WHERE id = $1', [
-              rpt.rows[0].comment_id,
-            ]);
-        } else if (d.action_type === 'account_suspended') {
-          await client.query('UPDATE users SET is_banned = FALSE WHERE id = $1', [
-            d.target_user_id,
-          ]);
+        if (decision.action_type === 'content_removed' && decision.report_id) {
+          const rpt = await tx.content_reports.findUnique({
+            where: { id: decision.report_id },
+            select: { post_id: true, comment_id: true },
+          });
+          if (rpt?.post_id)
+            await tx.posts.update({
+              where: { id: rpt.post_id },
+              data: { deleted_at: null },
+            });
+          if (rpt?.comment_id)
+            await tx.comments.update({
+              where: { id: rpt.comment_id },
+              data: { deleted_at: null },
+            });
+        } else if (decision.action_type === 'account_suspended') {
+          await tx.users.update({
+            where: { id: decision.target_user_id },
+            data: { is_banned: false },
+          });
         }
       }
 
-      const updated = await client.query(
-        `UPDATE moderation_decisions SET appeal_outcome = $1, appeal_note = COALESCE($2, appeal_note)
-         WHERE id = $3 RETURNING id, appeal_outcome`,
-        [outcome, note || null, id]
-      );
-      return { data: updated.rows[0] };
+      const updated = await tx.moderation_decisions.update({
+        where: { id: decisionId },
+        data: {
+          appeal_outcome: outcome,
+          appeal_note: note || undefined,
+        },
+        select: { id: true, appeal_outcome: true },
+      });
+      return { data: updated };
     });
 
     if (result.error) {
