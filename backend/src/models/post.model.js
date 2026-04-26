@@ -1,5 +1,3 @@
-const db = require('../config/db');
-
 /**
  * Shared SQL fragments for posts with repost support.
  * Eliminates the duplicated 30-line SELECT across getFeed, getPost, getByHashtag, getUserPosts.

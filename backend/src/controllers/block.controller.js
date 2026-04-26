@@ -1,37 +1,39 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 const toggleBlock = async (req, res, next) => {
   try {
-    const blockerId = req.user.id;
-    const blockedId = parseInt(req.params.userId, 10);
+    const blockerId = BigInt(req.user.id);
+    const blockedId = BigInt(req.params.userId);
 
     if (blockerId === blockedId) return res.status(400).json({ error: 'Cannot block yourself' });
 
-    const existing = await db.query(
-      'SELECT id FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2',
-      [blockerId, blockedId]
-    );
+    const existing = await prisma.user_blocks.findFirst({
+      where: { blocker_id: blockerId, blocked_id: blockedId },
+    });
 
-    if (existing.rows[0]) {
-      await db.query('DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2', [
-        blockerId,
-        blockedId,
-      ]);
+    if (existing) {
+      await prisma.user_blocks.delete({
+        where: { id: existing.id },
+      });
       return res.json({ blocked: false });
     }
 
     // Use transaction: insert block + remove follow relationships atomically
-    await db.withTransaction(async (client) => {
-      await client.query(
-        'INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-        [blockerId, blockedId]
-      );
+    await prisma.$transaction(async (tx) => {
+      // Create block (will throw if conflict, but that's handled by finding first)
+      await tx.user_blocks.create({
+        data: { blocker_id: blockerId, blocked_id: blockedId },
+      });
 
       // Remove any follow relationships in both directions when blocking
-      await client.query(
-        'DELETE FROM follows WHERE (follower_id = $1 AND following_id = $2) OR (follower_id = $2 AND following_id = $1)',
-        [blockerId, blockedId]
-      );
+      await tx.follows.deleteMany({
+        where: {
+          OR: [
+            { follower_id: blockerId, following_id: blockedId },
+            { follower_id: blockedId, following_id: blockerId },
+          ],
+        },
+      });
     });
 
     res.json({ blocked: true });
@@ -42,28 +44,25 @@ const toggleBlock = async (req, res, next) => {
 
 const toggleMute = async (req, res, next) => {
   try {
-    const muterId = req.user.id;
-    const mutedId = parseInt(req.params.userId, 10);
+    const muterId = BigInt(req.user.id);
+    const mutedId = BigInt(req.params.userId);
 
     if (muterId === mutedId) return res.status(400).json({ error: 'Cannot mute yourself' });
 
-    const existing = await db.query(
-      'SELECT id FROM user_mutes WHERE muter_id = $1 AND muted_id = $2',
-      [muterId, mutedId]
-    );
+    const existing = await prisma.user_mutes.findFirst({
+      where: { muter_id: muterId, muted_id: mutedId },
+    });
 
-    if (existing.rows[0]) {
-      await db.query('DELETE FROM user_mutes WHERE muter_id = $1 AND muted_id = $2', [
-        muterId,
-        mutedId,
-      ]);
+    if (existing) {
+      await prisma.user_mutes.delete({
+        where: { id: existing.id },
+      });
       return res.json({ muted: false });
     }
 
-    await db.query(
-      'INSERT INTO user_mutes (muter_id, muted_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [muterId, mutedId]
-    );
+    await prisma.user_mutes.create({
+      data: { muter_id: muterId, muted_id: mutedId },
+    });
 
     res.json({ muted: true });
   } catch (err) {
@@ -73,13 +72,13 @@ const toggleMute = async (req, res, next) => {
 
 const getBlockedUsers = async (req, res, next) => {
   try {
-    const result = await db.query(
+    const result = await prisma.$queryRawUnsafe(
       `SELECT u.id, u.username, u.full_name, u.avatar_url
        FROM user_blocks b JOIN users u ON u.id = b.blocked_id
        WHERE b.blocker_id = $1 ORDER BY b.created_at DESC`,
-      [req.user.id]
+      BigInt(req.user.id)
     );
-    res.json(result.rows);
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -87,13 +86,13 @@ const getBlockedUsers = async (req, res, next) => {
 
 const getMutedUsers = async (req, res, next) => {
   try {
-    const result = await db.query(
+    const result = await prisma.$queryRawUnsafe(
       `SELECT u.id, u.username, u.full_name, u.avatar_url
        FROM user_mutes m JOIN users u ON u.id = m.muted_id
        WHERE m.muter_id = $1 ORDER BY m.created_at DESC`,
-      [req.user.id]
+      BigInt(req.user.id)
     );
-    res.json(result.rows);
+    res.json(result);
   } catch (err) {
     next(err);
   }

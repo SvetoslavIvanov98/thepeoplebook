@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const authService = require('../services/auth.service');
 
 const COOKIE_OPTIONS = {
@@ -44,16 +44,25 @@ const refresh = async (req, res, next) => {
     }
 
     const tokenHash = authService.hashToken(refreshToken);
-    const stored = await db.query(
-      'DELETE FROM refresh_tokens WHERE token_hash = $1 AND expires_at > NOW() RETURNING user_id',
-      [tokenHash]
-    );
-    if (!stored.rows[0]) return res.status(401).json({ error: 'Refresh token revoked or expired' });
 
-    const newRefresh = authService.signRefresh(payload.sub);
-    await authService.storeRefreshToken(payload.sub, newRefresh);
+    const stored = await prisma.refresh_tokens.findUnique({
+      where: { token_hash: tokenHash },
+    });
+
+    if (!stored || stored.expires_at < new Date()) {
+      if (stored) {
+        await prisma.refresh_tokens.delete({ where: { token_hash: tokenHash } });
+      }
+      return res.status(401).json({ error: 'Refresh token revoked or expired' });
+    }
+
+    await prisma.refresh_tokens.delete({ where: { token_hash: tokenHash } });
+
+    const userIdStr = stored.user_id.toString();
+    const newRefresh = authService.signRefresh(userIdStr);
+    await authService.storeRefreshToken(userIdStr, newRefresh);
     res.cookie('refresh_token', newRefresh, COOKIE_OPTIONS);
-    res.json({ token: authService.signToken(payload.sub) });
+    res.json({ token: authService.signToken(userIdStr) });
   } catch (err) {
     next(err);
   }
@@ -63,9 +72,9 @@ const logout = async (req, res, next) => {
   try {
     const refreshToken = req.cookies?.refresh_token;
     if (refreshToken) {
-      await db.query('DELETE FROM refresh_tokens WHERE token_hash = $1', [
-        authService.hashToken(refreshToken),
-      ]);
+      await prisma.refresh_tokens.deleteMany({
+        where: { token_hash: authService.hashToken(refreshToken) },
+      });
     }
     res.clearCookie('refresh_token', { path: '/' });
     res.json({ success: true });
@@ -88,14 +97,24 @@ const googleCallback = async (req, res) => {
 
 const me = async (req, res, next) => {
   try {
-    const result = await db.query(
-      `SELECT u.id, u.username, u.email, u.full_name, u.avatar_url, u.bio, u.is_verified, u.role, u.is_banned, u.created_at,
-              u.followers_count,
-              u.following_count
-       FROM users u WHERE u.id = $1`,
-      [req.user.id]
-    );
-    res.json(result.rows[0]);
+    const user = await prisma.users.findUnique({
+      where: { id: BigInt(req.user.id) },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        full_name: true,
+        avatar_url: true,
+        bio: true,
+        is_verified: true,
+        role: true,
+        is_banned: true,
+        created_at: true,
+        followers_count: true,
+        following_count: true,
+      },
+    });
+    res.json(user);
   } catch (err) {
     next(err);
   }

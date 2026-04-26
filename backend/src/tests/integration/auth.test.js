@@ -1,6 +1,6 @@
 const request = require('supertest');
 const app = require('../../app');
-const db = require('../../config/db');
+const prisma = require('../../config/prisma');
 
 describe('Auth Integration Tests', () => {
   // Clean up database before/after tests if using a real test DB
@@ -17,9 +17,9 @@ describe('Auth Integration Tests', () => {
   afterAll(async () => {
     // Only cleanup if we are in a test environment that supports it
     if (process.env.DATABASE_URL) {
-      await db.query('DELETE FROM users WHERE email LIKE $1', ['test_%@example.com']);
+      await prisma.$executeRawUnsafe('DELETE FROM users WHERE email LIKE $1', 'test_%@example.com');
     }
-    await db.pool.end();
+    await prisma.$disconnect();
   });
 
   describe('POST /api/auth/register', () => {

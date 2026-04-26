@@ -9,7 +9,9 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-    # No host port binding — only reachable inside the Docker network
+    # Expose for local prisma introspect
+    ports:
+      - '5432:5432'
     expose:
       - '5432'
     healthcheck:

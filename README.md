@@ -1,185 +1,118 @@
 # The People Book
 
-[![Watch the demo](https://img.youtube.com/vi/Li9VcNrbDqY/maxresdefault.jpg)](https://youtu.be/Li9VcNrbDqY)
+<div align="center">
+  <img src="./assets/banner.png" alt="The People Book Banner" width="100%" />
+  
+  <p align="center">
+    <strong>A privacy-first, full-stack social ecosystem with glassmorphic aesthetics.</strong>
+  </p>
 
-A privacy-first, full-stack social network built with:
-- **Frontend**: React 18 + Vite + TailwindCSS + TanStack Query + Zustand
-- **Backend**: Node.js + Express + Socket.IO + Passport
-- **Database**: PostgreSQL
-- **Real-time**: WebSockets via Socket.IO
+[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
+[![Prisma](https://img.shields.io/badge/ORM-Prisma-2D3748.svg?logo=prisma)](https://www.prisma.io/)
+[![React](https://img.shields.io/badge/Frontend-React_18-61DAFB.svg?logo=react)](https://reactjs.org/)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791.svg?logo=postgresql)](https://www.postgresql.org/)
 
-## Features
-
-| Feature | Status |
-|---|---|
-| Posts & Feed (infinite scroll) | ✅ |
-| Likes & Comments (with replies) | ✅ |
-| Follow / Unfollow | ✅ |
-| Real-time notifications | ✅ |
-| Direct Messaging (real-time) | ✅ |
-| Stories (24hr expiry) | ✅ |
-| Groups & Communities | ✅ |
-| Media uploads (photos/videos, auto-converted to WebP) | ✅ |
-| Search (users, posts, hashtags) | ✅ |
-| User profiles | ✅ |
-| Account deletion (with password confirmation) | ✅ |
-| Email + Password auth | ✅ |
-| Google OAuth | ✅ |
-| JWT (15m) + Refresh tokens in HttpOnly cookies | ✅ |
-| Rate limiting, Helmet, CORS | ✅ |
-| Light / Dark theme | ✅ |
-| Public landing page with privacy pledge | ✅ |
+</div>
 
 ---
 
-## Quick Start (Local Development)
+## 🌟 Overview
+
+**The People Book** is a cutting-edge social networking platform built for the modern web. It combines a premium, glassmorphic UI with a high-performance, type-safe backend to deliver a seamless user experience.
+
+### 🎥 Watch the Demo
+
+[![Watch the demo](https://img.youtube.com/vi/Li9VcNrbDqY/maxresdefault.jpg)](https://youtu.be/Li9VcNrbDqY)
+
+---
+
+## ✨ Features
+
+### 📬 Social Core
+
+- **Infinite Feed**: High-performance virtualized scrolling for an endless content stream.
+- **Rich Interactions**: Nested comments with replies, likes, and a repost system.
+- **Stories**: Dynamic 24-hour disappearing media updates.
+- **Groups**: Comprehensive community management for public and private circles.
+
+### ⚡ Real-Time Engine
+
+- **Instant Messaging**: Low-latency, peer-to-peer chat powered by Socket.IO.
+- **Live Notifications**: Real-time alerts for all social interactions.
+- **Smart Push**: Cross-platform engagement via Web Push notifications.
+
+### 🛡️ Security & Privacy
+
+- **Enterprise Auth**: JWT-based authentication with HttpOnly cookies and token rotation.
+- **DSA Compliance**: Integrated moderation tools, reporting, and appeal workflows.
+- **Data Sovereignty**: GDPR-compliant data export and permanent account deletion.
+
+---
+
+## 🛠️ Technology Stack
+
+| Layer              | Technologies                                             |
+| ------------------ | -------------------------------------------------------- |
+| **Frontend**       | React 18, Vite, TanStack Query, Zustand, Framer Motion   |
+| **Backend**        | Node.js, Express, Socket.IO, Prisma ORM                  |
+| **Database**       | PostgreSQL (with Driver Adapter), Redis (Caching/Queues) |
+| **Storage**        | AWS S3 Compatible Media Hosting                          |
+| **Infrastructure** | Docker, Nginx, Sentry (Error Tracking)                   |
+
+---
+
+## 🚀 Quick Start (Local Development)
 
 ### Prerequisites
-- Node.js 20+
-- PostgreSQL 14+ running locally
 
-### 1. Clone & setup backend
+- Node.js 20+
+- PostgreSQL 14+
+
+### 1. Backend Setup
 
 ```bash
 cd backend
-cp .env.example .env
-# Edit .env — set your DB URL, JWT secrets, Google OAuth credentials
+cp .env.example .env  # Configure your DATABASE_URL and secrets
 npm install
-```
-
-### 2. Create the database & run migrations
-
-```bash
-# Create DB in PostgreSQL
-psql -U postgres -c "CREATE DATABASE social_db;"
-
-# Run schema
-npm run db:migrate
-```
-
-### 3. Start the backend
-
-```bash
+npx prisma db push    # Sync the schema to your local DB
 npm run dev
-# Runs on http://localhost:4000
 ```
 
-### 4. Setup & start the frontend
+### 2. Frontend Setup
 
 ```bash
 cd ../frontend
 npm install
 npm run dev
-# Runs on http://localhost:5173
 ```
 
 ---
 
-## Docker (Production-like)
+## 🏗️ Project Structure
 
 ```bash
-cd D:\Code\social
-
-# 1. Configure root-level secrets (DB credentials)
-cp .env.example .env
-# Edit .env — set POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
-
-# 2. Configure backend secrets
-cp backend/.env.example backend/.env
-# Edit backend/.env — set JWT secrets, Google OAuth credentials
-
-docker compose up --build
-```
-
-- Frontend → http://localhost:5173
-- Backend API → http://localhost:4000 (loopback only; not exposed externally)
-- PostgreSQL → internal Docker network only (no host port binding)
-
----
-
-## Project Structure
-
-```
 social/
 ├── backend/
 │   ├── src/
-│   │   ├── app.js              # Express app
-│   │   ├── index.js            # HTTP server + Socket.IO
-│   │   ├── config/
-│   │   │   ├── db.js           # PostgreSQL pool
-│   │   │   ├── passport.js     # JWT + Google OAuth strategies
-│   │   │   └── migrate.js      # Run schema migrations
-│   │   ├── routes/             # All route files
-│   │   ├── controllers/        # Business logic
-│   │   ├── middleware/         # Auth, upload, validation
-│   │   └── services/           # Socket.IO, notifications
-│   ├── Dockerfile
-│   └── package.json
-├── frontend/
-│   ├── src/
-│   │   ├── App.jsx             # Routes
-│   │   ├── pages/              # Full page components
-│   │   ├── components/         # Reusable UI
-│   │   ├── hooks/              # useTheme
-│   │   ├── store/              # Zustand stores
-│   │   └── services/           # API client, Socket.IO
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   └── package.json
-├── db/
-│   └── schema.sql              # Full PostgreSQL schema
-├── .env.example                # Root secrets template (DB credentials)
-└── docker-compose.yml
+│   │   ├── config/      # Prisma, Passport, Redis configs
+│   │   ├── controllers/ # Business logic (100% Prisma migrated)
+│   │   ├── models/      # Complex SQL fragments & utility queries
+│   │   └── services/    # Socket.IO & Push Notification logic
+│   └── prisma/          # Schema definition & migrations
+└── frontend/
+    └── src/
+        ├── components/  # Reusable UI (Glassmorphic design system)
+        ├── store/       # Zustand Global State
+        └── services/    # API & WebSocket client
 ```
 
 ---
 
-## Environment Variables
+## 🤝 Contributing
 
-### Root `.env` (Docker only)
+Contributions are welcome! Whether it's a bug report, feature request, or a full pull request, we appreciate your help in making **The People Book** better.
 
-| Variable | Description |
-|---|---|
-| `POSTGRES_USER` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | PostgreSQL password |
-| `POSTGRES_DB` | Database name |
+### License
 
-### `backend/.env`
-
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET` | Long random string for access tokens (15m expiry) |
-| `JWT_REFRESH_SECRET` | Separate long random string for refresh tokens (30d expiry) |
-| `GOOGLE_CLIENT_ID` | From Google Cloud Console |
-| `GOOGLE_CLIENT_SECRET` | From Google Cloud Console |
-| `FRONTEND_URL` | Frontend origin (for CORS; default `http://localhost:5173`) |
-
-> Generate secrets with: `node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"`
-
-## Security Notes
-
-- Refresh tokens are stored in **HttpOnly cookies** (not in `localStorage`) — invisible to JavaScript, safe from XSS
-- Access tokens expire in **15 minutes**; refresh tokens rotate on every use
-- Refresh tokens are stored as **SHA-256 hashes** in the database — never plaintext
-- All passwords hashed with **bcrypt** (cost 12)
-- Account deletion requires **password confirmation** and hard-deletes all user data via DB cascade
-
-## API Reference (Key Endpoints)
-
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/auth/register` | Register |
-| POST | `/api/auth/login` | Login |
-| POST | `/api/auth/refresh` | Rotate refresh token (reads from cookie) |
-| POST | `/api/auth/logout` | Logout (clears cookie) |
-| GET | `/api/auth/google` | Start Google OAuth |
-| GET | `/api/posts/feed` | Get paginated feed |
-| POST | `/api/posts` | Create post (multipart) |
-| POST | `/api/likes/post/:id` | Toggle like |
-| POST | `/api/follows/:userId/toggle` | Toggle follow |
-| GET | `/api/messages` | List conversations |
-| POST | `/api/messages/:convId` | Send message |
-| GET | `/api/search?q=term` | Search users/posts/hashtags |
-| PATCH | `/api/users/me` | Update profile |
-| DELETE | `/api/users/me` | Delete account permanently |
+This project is licensed under the [MIT License](LICENSE).

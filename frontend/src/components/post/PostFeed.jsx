@@ -1,4 +1,6 @@
+import { useEffect, useRef } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import api from '../../services/api';
 import PostCard from './PostCard';
 import { PostSkeleton } from '../Skeleton';
@@ -14,6 +16,25 @@ export default function PostFeed() {
   });
 
   const posts = data?.pages.flat() || [];
+
+  const parentRef = useRef(null);
+
+  const virtualizer = useWindowVirtualizer({
+    count: hasNextPage ? posts.length + 1 : posts.length,
+    estimateSize: () => 400, // Estimated height of a post
+    overscan: 5,
+  });
+
+  const items = virtualizer.getVirtualItems();
+
+  useEffect(() => {
+    const [lastItem] = [...items].reverse();
+    if (!lastItem) return;
+
+    if (lastItem.index >= posts.length - 1 && hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, fetchNextPage, posts.length, isFetchingNextPage, items]);
 
   if (isPending)
     return (
@@ -31,19 +52,37 @@ export default function PostFeed() {
     );
 
   return (
-    <div className="flex flex-col gap-2">
-      {posts.map((p) => (
-        <PostCard key={p.id} post={p} />
-      ))}
-      {hasNextPage && (
-        <button
-          onClick={() => fetchNextPage()}
-          disabled={isFetchingNextPage}
-          className="w-full p-4 mb-8 bg-white/50 dark:bg-black/20 backdrop-blur-md rounded-2xl border border-white/30 dark:border-white/5 text-brand-600 hover:text-brand-700 hover:shadow-lg dark:hover:text-brand-400 font-bold transition-all duration-300 hover:scale-[1.02]"
-        >
-          {isFetchingNextPage ? 'Loading…' : 'Load more'}
-        </button>
-      )}
+    <div
+      ref={parentRef}
+      className="relative w-full"
+      style={{ height: `${virtualizer.getTotalSize()}px` }}
+    >
+      {items.map((virtualRow) => {
+        const isLoaderRow = virtualRow.index > posts.length - 1;
+        const post = posts[virtualRow.index];
+
+        return (
+          <div
+            key={virtualRow.key}
+            data-index={virtualRow.index}
+            ref={virtualizer.measureElement}
+            className="absolute top-0 left-0 w-full"
+            style={{
+              transform: `translateY(${virtualRow.start}px)`,
+            }}
+          >
+            <div className="pb-2">
+              {isLoaderRow ? (
+                <div className="p-4 text-center text-brand-600 font-bold">
+                  Loading more posts...
+                </div>
+              ) : (
+                <PostCard post={post} />
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

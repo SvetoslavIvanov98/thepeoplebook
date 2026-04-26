@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const AppError = require('../utils/AppError');
 
 const MIN_AGE_YEARS = 16;
@@ -39,17 +39,22 @@ const hashToken = (token) => crypto.createHash('sha256').update(token).digest('h
 const storeRefreshToken = async (userId, token) => {
   const expiresInDays = parseInt(process.env.JWT_REFRESH_EXPIRES_IN) || 30;
   const expiresAt = new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000);
-  await db.query(
-    'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
-    [userId, hashToken(token), expiresAt]
-  );
+  await prisma.refresh_tokens.create({
+    data: {
+      user_id: BigInt(userId),
+      token_hash: hashToken(token),
+      expires_at: expiresAt,
+    },
+  });
 };
 
 /**
  * Revoke all refresh tokens for a user (used on ban, password change, etc.)
  */
 const revokeAllTokens = async (userId) => {
-  await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
+  await prisma.refresh_tokens.deleteMany({
+    where: { user_id: BigInt(userId) },
+  });
 };
 
 /**
@@ -73,26 +78,38 @@ const registerUser = async (userData) => {
     );
   }
 
-  const exists = await db.query('SELECT id FROM users WHERE email = $1 OR username = $2', [
-    email,
-    username,
-  ]);
-  if (exists.rows.length) {
+  const exists = await prisma.users.findFirst({
+    where: {
+      OR: [{ email }, { username }],
+    },
+  });
+  if (exists) {
     throw new AppError('Email or username already taken', 409);
   }
 
   const hash = await bcrypt.hash(password, 12);
-  const result = await db.query(
-    `INSERT INTO users (username, email, password_hash, full_name, date_of_birth)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, full_name, avatar_url, created_at`,
-    [username, email, hash, full_name || null, date_of_birth || null]
-  );
+  const user = await prisma.users.create({
+    data: {
+      username,
+      email,
+      password_hash: hash,
+      full_name: full_name || null,
+      date_of_birth: date_of_birth ? new Date(date_of_birth) : null,
+    },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      full_name: true,
+      avatar_url: true,
+      created_at: true,
+    },
+  });
 
-  const user = result.rows[0];
-  const refreshToken = signRefresh(user.id);
-  await storeRefreshToken(user.id, refreshToken);
+  const refreshToken = signRefresh(user.id.toString());
+  await storeRefreshToken(user.id.toString(), refreshToken);
 
-  return { user, token: signToken(user.id), refreshToken };
+  return { user, token: signToken(user.id.toString()), refreshToken };
 };
 
 /**
@@ -100,14 +117,25 @@ const registerUser = async (userData) => {
  * Uses explicit column list to avoid leaking sensitive fields.
  */
 const loginUser = async (email, password) => {
-  const result = await db.query(
-    `SELECT id, username, email, full_name, avatar_url, cover_url, bio,
-            is_verified, role, is_banned, created_at, password_hash,
-            followers_count, following_count
-     FROM users WHERE email = $1`,
-    [email]
-  );
-  const user = result.rows[0];
+  const user = await prisma.users.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      full_name: true,
+      avatar_url: true,
+      cover_url: true,
+      bio: true,
+      is_verified: true,
+      role: true,
+      is_banned: true,
+      created_at: true,
+      password_hash: true,
+      followers_count: true,
+      following_count: true,
+    },
+  });
 
   if (!user || !user.password_hash) {
     throw new AppError('Invalid credentials', 401);
@@ -122,19 +150,21 @@ const loginUser = async (email, password) => {
     throw new AppError('Invalid credentials', 401);
   }
 
-  const refreshToken = signRefresh(user.id);
-  await storeRefreshToken(user.id, refreshToken);
+  const refreshToken = signRefresh(user.id.toString());
+  await storeRefreshToken(user.id.toString(), refreshToken);
 
   const { password_hash, ...safeUser } = user;
-  return { user: safeUser, token: signToken(user.id), refreshToken };
+  return { user: safeUser, token: signToken(user.id.toString()), refreshToken };
 };
 
 /**
  * Change a user's password and revoke all existing sessions.
  */
 const changePassword = async (userId, currentPassword, newPassword) => {
-  const result = await db.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
-  const user = result.rows[0];
+  const user = await prisma.users.findUnique({
+    where: { id: BigInt(userId) },
+    select: { password_hash: true },
+  });
 
   if (!user || !user.password_hash) {
     throw new AppError('Password change not available for OAuth accounts', 400);
@@ -146,10 +176,13 @@ const changePassword = async (userId, currentPassword, newPassword) => {
   }
 
   const hash = await bcrypt.hash(newPassword, 12);
-  await db.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [
-    hash,
-    userId,
-  ]);
+  await prisma.users.update({
+    where: { id: BigInt(userId) },
+    data: {
+      password_hash: hash,
+      updated_at: new Date(),
+    },
+  });
 
   // Revoke all existing sessions for security
   await revokeAllTokens(userId);

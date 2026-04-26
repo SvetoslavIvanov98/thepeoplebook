@@ -1,3 +1,8 @@
+// BigInt JSON serialization support for Prisma
+BigInt.prototype.toJSON = function () {
+  return this.toString();
+};
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -27,6 +32,7 @@ const statsRoutes = require('./routes/stats.routes');
 const blockRoutes = require('./routes/block.routes');
 const adminRoutes = require('./routes/admin.routes');
 const reportRoutes = require('./routes/report.routes');
+const webpushRoutes = require('./routes/webpush.routes');
 
 const app = express();
 
@@ -93,6 +99,7 @@ app.use('/api/stats', statsRoutes);
 app.use('/api/users', blockRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/webpush', webpushRoutes);
 
 // Serve local uploads directory (dev only — S3 is used in production)
 if (!process.env.LINODE_S3_BUCKET) {
@@ -107,9 +114,9 @@ app.get('/health', async (_req, res) => {
 
   // Check database
   try {
-    const db = require('./config/db');
+    const prisma = require('./config/prisma');
     const start = Date.now();
-    await db.query('SELECT 1');
+    await prisma.$queryRawUnsafe('SELECT 1');
     checks.database = { status: 'ok', latency: `${Date.now() - start}ms` };
   } catch (err) {
     checks.database = { status: 'error', message: err.message };
@@ -136,6 +143,10 @@ app.get('/health', async (_req, res) => {
   const statusCode = health.status === 'ok' ? 200 : 503;
   res.status(statusCode).json(health);
 });
+
+// Sentry error handler (must be before any other error middleware and after all controllers)
+const Sentry = require('@sentry/node');
+Sentry.setupExpressErrorHandler(app);
 
 // Global error handler
 app.use((err, _req, res, _next) => {

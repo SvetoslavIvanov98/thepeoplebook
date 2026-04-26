@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const { deleteS3Object } = require('../config/s3');
 const { invalidateCache } = require('../middleware/cache.middleware');
 const { changePassword } = require('../services/auth.service');
@@ -7,19 +7,59 @@ const { buildPostQuery } = require('../models/post.model');
 const getProfile = async (req, res, next) => {
   try {
     const { username } = req.params;
-    const result = await db.query(
-      `SELECT u.id, u.username, u.full_name, u.avatar_url, u.cover_url, u.bio, u.is_verified, u.created_at,
-              u.followers_count,
-              u.following_count,
-              ${req.user ? `EXISTS(SELECT 1 FROM follows WHERE follower_id = $2 AND following_id = u.id)` : 'FALSE'} AS is_following,
-              ${req.user ? `EXISTS(SELECT 1 FROM user_blocks WHERE blocker_id = $2 AND blocked_id = u.id)` : 'FALSE'} AS is_blocked,
-              ${req.user ? `EXISTS(SELECT 1 FROM user_blocks WHERE blocker_id = u.id AND blocked_id = $2)` : 'FALSE'} AS has_blocked_me,
-              ${req.user ? `EXISTS(SELECT 1 FROM user_mutes WHERE muter_id = $2 AND muted_id = u.id)` : 'FALSE'} AS is_muted
-       FROM users u WHERE u.username = $1`,
-      req.user ? [username, req.user.id] : [username]
-    );
-    if (!result.rows[0]) return res.status(404).json({ error: 'User not found' });
-    res.json(result.rows[0]);
+
+    const user = await prisma.users.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        username: true,
+        full_name: true,
+        avatar_url: true,
+        cover_url: true,
+        bio: true,
+        is_verified: true,
+        created_at: true,
+        followers_count: true,
+        following_count: true,
+        ...(req.user
+          ? {
+              follows_follows_following_idTousers: {
+                where: { follower_id: BigInt(req.user.id) },
+                select: { id: true },
+              },
+              user_blocks_user_blocks_blocked_idTousers: {
+                where: { blocker_id: BigInt(req.user.id) },
+                select: { id: true },
+              },
+              user_blocks_user_blocks_blocker_idTousers: {
+                where: { blocked_id: BigInt(req.user.id) },
+                select: { id: true },
+              },
+              user_mutes_user_mutes_muted_idTousers: {
+                where: { muter_id: BigInt(req.user.id) },
+                select: { id: true },
+              },
+            }
+          : {}),
+      },
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const profile = {
+      ...user,
+      is_following: user.follows_follows_following_idTousers?.length > 0 || false,
+      is_blocked: user.user_blocks_user_blocks_blocked_idTousers?.length > 0 || false,
+      has_blocked_me: user.user_blocks_user_blocks_blocker_idTousers?.length > 0 || false,
+      is_muted: user.user_mutes_user_mutes_muted_idTousers?.length > 0 || false,
+    };
+
+    delete profile.follows_follows_following_idTousers;
+    delete profile.user_blocks_user_blocks_blocked_idTousers;
+    delete profile.user_blocks_user_blocks_blocker_idTousers;
+    delete profile.user_mutes_user_mutes_muted_idTousers;
+
+    res.json(profile);
   } catch (err) {
     next(err);
   }
@@ -31,49 +71,42 @@ const updateProfile = async (req, res, next) => {
     const avatar_url = req.files?.avatar?.[0]?.location;
     const cover_url = req.files?.cover?.[0]?.location;
 
-    const fields = [];
-    const values = [];
-    let idx = 1;
+    const updateData = {};
+    if (full_name !== undefined) updateData.full_name = full_name;
+    if (bio !== undefined) updateData.bio = bio;
+    if (avatar_url) updateData.avatar_url = avatar_url;
+    if (cover_url) updateData.cover_url = cover_url;
 
-    if (full_name !== undefined) {
-      fields.push(`full_name = $${idx++}`);
-      values.push(full_name);
-    }
-    if (bio !== undefined) {
-      fields.push(`bio = $${idx++}`);
-      values.push(bio);
-    }
-    if (avatar_url) {
-      fields.push(`avatar_url = $${idx++}`);
-      values.push(avatar_url);
-    }
-    if (cover_url) {
-      fields.push(`cover_url = $${idx++}`);
-      values.push(cover_url);
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
     }
 
-    if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
+    const oldUser = await prisma.users.findUnique({
+      where: { id: BigInt(req.user.id) },
+      select: { avatar_url: true, cover_url: true },
+    });
 
-    // Fetch old URLs before overwriting so we can delete them from S3
-    const oldResult = await db.query('SELECT avatar_url, cover_url FROM users WHERE id = $1', [
-      req.user.id,
-    ]);
-    const old = oldResult.rows[0] || {};
+    updateData.updated_at = new Date();
 
-    values.push(req.user.id);
-    const result = await db.query(
-      `UPDATE users SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $${idx} RETURNING id, username, full_name, bio, avatar_url, cover_url`,
-      values
-    );
+    const updatedUser = await prisma.users.update({
+      where: { id: BigInt(req.user.id) },
+      data: updateData,
+      select: {
+        id: true,
+        username: true,
+        full_name: true,
+        bio: true,
+        avatar_url: true,
+        cover_url: true,
+      },
+    });
 
-    // Remove replaced files from S3
-    if (avatar_url && old.avatar_url) await deleteS3Object(old.avatar_url);
-    if (cover_url && old.cover_url) await deleteS3Object(old.cover_url);
+    if (avatar_url && oldUser?.avatar_url) await deleteS3Object(oldUser.avatar_url);
+    if (cover_url && oldUser?.cover_url) await deleteS3Object(oldUser.cover_url);
 
-    // Invalidate cached profile
-    await invalidateCache(`cache:*:/api/users/${result.rows[0].username}*`);
+    await invalidateCache(`cache:*:/api/users/${updatedUser.username}*`);
 
-    res.json(result.rows[0]);
+    res.json(updatedUser);
   } catch (err) {
     next(err);
   }
@@ -81,19 +114,19 @@ const updateProfile = async (req, res, next) => {
 
 const getSuggestedUsers = async (req, res, next) => {
   try {
-    const result = await db.query(
-      `SELECT u.id, u.username, u.full_name, u.avatar_url, u.is_verified,
-              u.followers_count
-       FROM users u
-       WHERE u.id != $1
-         AND u.id NOT IN (SELECT following_id FROM follows WHERE follower_id = $1)
-         AND u.id NOT IN (SELECT blocked_id FROM user_blocks WHERE blocker_id = $1)
-         AND u.id NOT IN (SELECT blocker_id FROM user_blocks WHERE blocked_id = $1)
-       ORDER BY followers_count DESC
-       LIMIT 10`,
-      [req.user.id]
-    );
-    res.json(result.rows);
+    const userId = BigInt(req.user.id);
+    const result = await prisma.$queryRaw`
+      SELECT u.id, u.username, u.full_name, u.avatar_url, u.is_verified,
+             u.followers_count
+      FROM users u
+      WHERE u.id != ${userId}
+        AND u.id NOT IN (SELECT following_id FROM follows WHERE follower_id = ${userId})
+        AND u.id NOT IN (SELECT blocked_id FROM user_blocks WHERE blocker_id = ${userId})
+        AND u.id NOT IN (SELECT blocker_id FROM user_blocks WHERE blocked_id = ${userId})
+      ORDER BY followers_count DESC
+      LIMIT 10
+    `;
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -113,10 +146,12 @@ const getUserPosts = async (req, res, next) => {
         limitRef: '$2',
       }) + ` OFFSET $3`;
 
-    const params = req.user ? [username, limit, offset, req.user.id] : [username, limit, offset];
+    const params = req.user
+      ? [username, limit, offset, BigInt(req.user.id)]
+      : [username, limit, offset];
 
-    const result = await db.query(query, params);
-    res.json(result.rows);
+    const result = await prisma.$queryRawUnsafe(query, ...params);
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -126,12 +161,15 @@ const getUserPosts = async (req, res, next) => {
 const deleteAccount = async (req, res, next) => {
   try {
     const { password } = req.body;
+    const userId = BigInt(req.user.id);
 
     // Re-verify password for non-OAuth accounts before deletion
-    const result = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.user.id]);
-    const user = result.rows[0];
+    const user = await prisma.users.findUnique({
+      where: { id: userId },
+      select: { password_hash: true },
+    });
 
-    if (user.password_hash) {
+    if (user?.password_hash) {
       if (!password)
         return res.status(400).json({ error: 'Password is required to delete account' });
       const bcrypt = require('bcryptjs');
@@ -139,10 +177,10 @@ const deleteAccount = async (req, res, next) => {
       if (!valid) return res.status(401).json({ error: 'Incorrect password' });
     }
 
-    // Delete user inside a transaction — cascade removes posts, follows, likes, comments, tokens, etc.
-    await db.withTransaction(async (client) => {
-      await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [req.user.id]);
-      await client.query('DELETE FROM users WHERE id = $1', [req.user.id]);
+    // Prisma handles cascade deletes defined in the schema, but we can wrap in transaction
+    await prisma.$transaction(async (tx) => {
+      await tx.refresh_tokens.deleteMany({ where: { user_id: userId } });
+      await tx.users.delete({ where: { id: userId } });
     });
 
     res.clearCookie('refresh_token', { path: '/' });
@@ -166,7 +204,7 @@ const updatePassword = async (req, res, next) => {
 
 const exportMyData = async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    const userId = BigInt(req.user.id);
 
     const [
       userResult,
@@ -180,69 +218,83 @@ const exportMyData = async (req, res, next) => {
       blocksResult,
       mutesResult,
     ] = await Promise.all([
-      db.query(
-        'SELECT id, username, email, full_name, bio, avatar_url, date_of_birth, is_verified, created_at FROM users WHERE id = $1',
-        [userId]
-      ),
-      db.query(
-        'SELECT id, content, media_urls, hashtags, created_at FROM posts WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC',
-        [userId]
-      ),
-      db.query(
-        'SELECT id, post_id, content, created_at FROM comments WHERE user_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC',
-        [userId]
-      ),
-      db.query(
-        'SELECT u.username, u.full_name, f.created_at AS followed_at FROM follows f JOIN users u ON u.id = f.following_id WHERE f.follower_id = $1',
-        [userId]
-      ),
-      db.query(
-        'SELECT u.username, u.full_name, f.created_at AS followed_at FROM follows f JOIN users u ON u.id = f.follower_id WHERE f.following_id = $1',
-        [userId]
-      ),
-      db.query(
-        'SELECT id, media_url, created_at, expires_at FROM stories WHERE user_id = $1 ORDER BY created_at DESC',
-        [userId]
-      ),
-      db.query(
-        'SELECT id, type, actor_id, post_id, comment_id, read, created_at FROM notifications WHERE user_id = $1 ORDER BY created_at DESC',
-        [userId]
-      ),
-      db.query(
-        `SELECT m.id, m.conversation_id, m.content, m.media_url, m.created_at
-         FROM messages m
-         WHERE m.sender_id = $1
-         ORDER BY m.created_at DESC`,
-        [userId]
-      ),
-      db.query(
-        'SELECT b.blocked_id, u.username, b.created_at FROM user_blocks b JOIN users u ON u.id = b.blocked_id WHERE b.blocker_id = $1',
-        [userId]
-      ),
-      db.query(
-        'SELECT m.muted_id, u.username, m.created_at FROM user_mutes m JOIN users u ON u.id = m.muted_id WHERE m.muter_id = $1',
-        [userId]
-      ),
+      prisma.users.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          full_name: true,
+          bio: true,
+          avatar_url: true,
+          date_of_birth: true,
+          is_verified: true,
+          created_at: true,
+        },
+      }),
+      prisma.posts.findMany({
+        where: { user_id: userId, deleted_at: null },
+        select: { id: true, content: true, media_urls: true, hashtags: true, created_at: true },
+        orderBy: { created_at: 'desc' },
+      }),
+      prisma.comments.findMany({
+        where: { user_id: userId, deleted_at: null },
+        select: { id: true, post_id: true, content: true, created_at: true },
+        orderBy: { created_at: 'desc' },
+      }),
+      prisma.$queryRaw`SELECT u.username, u.full_name, f.created_at AS followed_at FROM follows f JOIN users u ON u.id = f.following_id WHERE f.follower_id = ${userId}`,
+      prisma.$queryRaw`SELECT u.username, u.full_name, f.created_at AS followed_at FROM follows f JOIN users u ON u.id = f.follower_id WHERE f.following_id = ${userId}`,
+      prisma.stories.findMany({
+        where: { user_id: userId },
+        select: { id: true, media_url: true, created_at: true, expires_at: true },
+        orderBy: { created_at: 'desc' },
+      }),
+      prisma.notifications.findMany({
+        where: { user_id: userId },
+        select: {
+          id: true,
+          type: true,
+          actor_id: true,
+          post_id: true,
+          comment_id: true,
+          read: true,
+          created_at: true,
+        },
+        orderBy: { created_at: 'desc' },
+      }),
+      prisma.messages.findMany({
+        where: { sender_id: userId },
+        select: {
+          id: true,
+          conversation_id: true,
+          content: true,
+          media_url: true,
+          created_at: true,
+        },
+        orderBy: { created_at: 'desc' },
+      }),
+      prisma.$queryRaw`SELECT b.blocked_id, u.username, b.created_at FROM user_blocks b JOIN users u ON u.id = b.blocked_id WHERE b.blocker_id = ${userId}`,
+      prisma.$queryRaw`SELECT m.muted_id, u.username, m.created_at FROM user_mutes m JOIN users u ON u.id = m.muted_id WHERE m.muter_id = ${userId}`,
     ]);
 
     const exportData = {
       exported_at: new Date().toISOString(),
-      account: userResult.rows[0],
-      posts: postsResult.rows,
-      comments: commentsResult.rows,
-      following: followingResult.rows,
-      followers: followersResult.rows,
-      stories: storiesResult.rows,
-      notifications: notificationsResult.rows,
-      messages_sent: messagesResult.rows,
-      blocked_users: blocksResult.rows,
-      muted_users: mutesResult.rows,
+      account: userResult,
+      posts: postsResult,
+      comments: commentsResult,
+      following: followingResult,
+      followers: followersResult,
+      stories: storiesResult,
+      notifications: notificationsResult,
+      messages_sent: messagesResult,
+      blocked_users: blocksResult,
+      muted_users: mutesResult,
     };
 
     res.setHeader('Content-Type', 'application/json');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="thepeoplebook-data-${userId}.json"`
+      `attachment; filename="thepeoplebook-data-${req.user.id}.json"`
     );
     res.json(exportData);
   } catch (err) {

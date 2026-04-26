@@ -1,10 +1,10 @@
 const request = require('supertest');
 const app = require('../app');
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 describe('App endpoints', () => {
   afterAll(async () => {
-    await db.pool.end();
+    await prisma.$disconnect();
   });
 
   it('GET /health should return 200 OK', async () => {

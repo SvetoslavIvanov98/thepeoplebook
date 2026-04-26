@@ -13,7 +13,12 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "@sentry/node": "^10.50.0",
+    "@sentry/profiling-node": "^10.50.0",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^5.76.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -27,17 +32,19 @@
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
-    "pg": "^8.12.0",
+    "pg": "^8.20.0",
     "redis": "^5.12.1",
     "sharp": "^0.33.4",
     "socket.io": "^4.7.5",
     "uuid": "^10.0.0",
+    "web-push": "^3.6.7",
     "winston": "^3.13.0",
     "xss": "^1.0.15"
   },
   "devDependencies": {
     "jest": "^30.3.0",
     "nodemon": "^3.1.4",
+    "prisma": "^7.8.0",
     "supertest": "^7.2.2"
   }
 }

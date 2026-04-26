@@ -1,26 +1,35 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const { emitNotification } = require('../services/notification.service');
 
 const toggle = async (req, res, next) => {
   try {
-    const { postId } = req.params;
+    const postId = BigInt(req.params.postId);
+    const userId = BigInt(req.user.id);
 
-    const existing = await db.query(
-      'SELECT id FROM likes WHERE post_id = $1 AND user_id = $2',
-      [postId, req.user.id]
-    );
+    const existing = await prisma.likes.findFirst({
+      where: { post_id: postId, user_id: userId },
+      select: { id: true },
+    });
 
-    if (existing.rows[0]) {
-      await db.query('DELETE FROM likes WHERE id = $1', [existing.rows[0].id]);
+    if (existing) {
+      await prisma.likes.delete({ where: { id: existing.id } });
       return res.json({ liked: false });
     }
 
-    await db.query('INSERT INTO likes (post_id, user_id) VALUES ($1, $2)', [postId, req.user.id]);
+    await prisma.likes.create({
+      data: { post_id: postId, user_id: userId },
+    });
 
-    const post = await db.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
-    if (post.rows[0] && post.rows[0].user_id !== req.user.id) {
-      await emitNotification(post.rows[0].user_id, {
-        type: 'like', actor_id: req.user.id, post_id: postId,
+    const post = await prisma.posts.findUnique({
+      where: { id: postId },
+      select: { user_id: true },
+    });
+
+    if (post && post.user_id !== userId) {
+      await emitNotification(post.user_id, {
+        type: 'like',
+        actor_id: req.user.id,
+        post_id: req.params.postId,
       });
     }
 
@@ -32,19 +41,23 @@ const toggle = async (req, res, next) => {
 
 const toggleComment = async (req, res, next) => {
   try {
-    const { commentId } = req.params;
+    const commentId = BigInt(req.params.commentId);
+    const userId = BigInt(req.user.id);
 
-    const existing = await db.query(
-      'SELECT id FROM likes WHERE comment_id = $1 AND user_id = $2',
-      [commentId, req.user.id]
-    );
+    const existing = await prisma.likes.findFirst({
+      where: { comment_id: commentId, user_id: userId },
+      select: { id: true },
+    });
 
-    if (existing.rows[0]) {
-      await db.query('DELETE FROM likes WHERE id = $1', [existing.rows[0].id]);
+    if (existing) {
+      await prisma.likes.delete({ where: { id: existing.id } });
       return res.json({ liked: false });
     }
 
-    await db.query('INSERT INTO likes (comment_id, user_id) VALUES ($1, $2)', [commentId, req.user.id]);
+    await prisma.likes.create({
+      data: { comment_id: commentId, user_id: userId },
+    });
+
     res.json({ liked: true });
   } catch (err) {
     next(err);

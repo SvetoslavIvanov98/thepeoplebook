@@ -1,10 +1,11 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 const getNotifications = async (req, res, next) => {
   try {
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const offset = parseInt(req.query.offset) || 0;
-    const result = await db.query(
+
+    const result = await prisma.$queryRawUnsafe(
       `SELECT n.*, u.username AS actor_username, u.full_name AS actor_name, u.avatar_url AS actor_avatar,
               g.name AS group_name, g.privacy AS group_privacy
        FROM notifications n
@@ -13,9 +14,12 @@ const getNotifications = async (req, res, next) => {
        WHERE n.user_id = $1
        ORDER BY n.created_at DESC
        LIMIT $2 OFFSET $3`,
-      [req.user.id, limit, offset]
+      BigInt(req.user.id),
+      limit,
+      offset
     );
-    res.json(result.rows);
+
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -24,7 +28,10 @@ const getNotifications = async (req, res, next) => {
 // Mark all notifications as read
 const markRead = async (req, res, next) => {
   try {
-    await db.query('UPDATE notifications SET read = TRUE WHERE user_id = $1', [req.user.id]);
+    await prisma.notifications.updateMany({
+      where: { user_id: BigInt(req.user.id), read: false },
+      data: { read: true },
+    });
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -34,12 +41,20 @@ const markRead = async (req, res, next) => {
 // PATCH /api/notifications/:id/read — mark a single notification as read
 const markOneRead = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const result = await db.query(
-      'UPDATE notifications SET read = TRUE WHERE id = $1 AND user_id = $2 RETURNING id',
-      [id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Notification not found' });
+    const id = BigInt(req.params.id);
+    const userId = BigInt(req.user.id);
+
+    const existing = await prisma.notifications.findFirst({
+      where: { id, user_id: userId },
+    });
+
+    if (!existing) return res.status(404).json({ error: 'Notification not found' });
+
+    await prisma.notifications.update({
+      where: { id },
+      data: { read: true },
+    });
+
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -52,12 +67,19 @@ const registerPushToken = async (req, res, next) => {
     if (!token || typeof token !== 'string') {
       return res.status(400).json({ error: 'token is required' });
     }
-    await db.query(
-      `INSERT INTO push_tokens (user_id, token)
-       VALUES ($1, $2)
-       ON CONFLICT (user_id, token) DO NOTHING`,
-      [req.user.id, token]
-    );
+
+    const userId = BigInt(req.user.id);
+
+    const existing = await prisma.push_tokens.findFirst({
+      where: { user_id: userId, token },
+    });
+
+    if (!existing) {
+      await prisma.push_tokens.create({
+        data: { user_id: userId, token },
+      });
+    }
+
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -68,10 +90,11 @@ const removePushToken = async (req, res, next) => {
   try {
     const { token } = req.body;
     if (!token) return res.status(400).json({ error: 'token is required' });
-    await db.query('DELETE FROM push_tokens WHERE user_id = $1 AND token = $2', [
-      req.user.id,
-      token,
-    ]);
+
+    await prisma.push_tokens.deleteMany({
+      where: { user_id: BigInt(req.user.id), token },
+    });
+
     res.json({ success: true });
   } catch (err) {
     next(err);

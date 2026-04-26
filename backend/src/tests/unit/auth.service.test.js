@@ -1,10 +1,18 @@
 const authService = require('../../services/auth.service');
-const db = require('../../config/db');
+const prisma = require('../../config/prisma');
 const bcrypt = require('bcryptjs');
-const { mockQuery, mockQueryError } = require('../helpers/dbMock');
 
-jest.mock('../../config/db', () => ({
-  query: jest.fn(),
+jest.mock('../../config/prisma', () => ({
+  users: {
+    findFirst: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+  },
+  refresh_tokens: {
+    create: jest.fn(),
+    deleteMany: jest.fn(),
+    findFirst: jest.fn(),
+  },
 }));
 
 jest.mock('bcryptjs', () => ({
@@ -27,28 +35,27 @@ describe('Auth Service Unit Tests', () => {
 
     it('should successfully register a user', async () => {
       // 1. Mock "user exists" check (no user found)
-      mockQuery(db.query, { rows: [] });
+      prisma.users.findFirst.mockResolvedValue(null);
 
       // 2. Mock bcrypt hash
       bcrypt.hash.mockResolvedValue('hashed_password');
 
       // 3. Mock database insertion
-      const mockUser = { id: '1', username: 'testuser', email: 'test@example.com' };
-      mockQuery(db.query, { rows: [mockUser] });
+      const mockUser = { id: BigInt(1), username: 'testuser', email: 'test@example.com' };
+      prisma.users.create.mockResolvedValue(mockUser);
 
       // 4. Mock refresh token storage
-      mockQuery(db.query, { rows: [] });
+      prisma.refresh_tokens.create.mockResolvedValue({ id: BigInt(1) });
 
       const result = await authService.registerUser(validData);
 
       expect(result.user).toEqual(mockUser);
       expect(result.token).toBeDefined();
       expect(result.refreshToken).toBeDefined();
-      expect(db.query).toHaveBeenCalledTimes(3);
     });
 
     it('should throw error if user already exists', async () => {
-      mockQuery(db.query, { rows: [{ id: '1' }] });
+      prisma.users.findFirst.mockResolvedValue({ id: BigInt(1) });
 
       await expect(authService.registerUser(validData)).rejects.toThrow(
         'Email or username already taken'
@@ -66,10 +73,15 @@ describe('Auth Service Unit Tests', () => {
 
   describe('loginUser', () => {
     it('should successfully login a user', async () => {
-      const mockUser = { id: '1', email: 'test@example.com', password_hash: 'hashed' };
-      mockQuery(db.query, { rows: [mockUser] });
+      const mockUser = {
+        id: BigInt(1),
+        email: 'test@example.com',
+        password_hash: 'hashed',
+        is_banned: false,
+      };
+      prisma.users.findUnique.mockResolvedValue(mockUser);
       bcrypt.compare.mockResolvedValue(true);
-      mockQuery(db.query, { rows: [] }); // refresh token storage
+      prisma.refresh_tokens.create.mockResolvedValue({ id: BigInt(1) }); // refresh token storage
 
       const result = await authService.loginUser('test@example.com', 'password123');
 
@@ -78,7 +90,7 @@ describe('Auth Service Unit Tests', () => {
     });
 
     it('should throw error for invalid credentials', async () => {
-      mockQuery(db.query, { rows: [] }); // User not found
+      prisma.users.findUnique.mockResolvedValue(null); // User not found
 
       await expect(authService.loginUser('wrong@example.com', 'pass')).rejects.toThrow(
         'Invalid credentials'

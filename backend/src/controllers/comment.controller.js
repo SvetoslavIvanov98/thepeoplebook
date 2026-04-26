@@ -1,4 +1,4 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 const { emitNotification } = require('../services/notification.service');
 
 const getComments = async (req, res, next) => {
@@ -6,7 +6,8 @@ const getComments = async (req, res, next) => {
     const { postId } = req.params;
     const limit = Math.min(parseInt(req.query.limit) || 20, 50);
     const offset = parseInt(req.query.offset) || 0;
-    const result = await db.query(
+
+    const result = await prisma.$queryRawUnsafe(
       `SELECT c.id, c.content, c.created_at, c.edited_at, c.parent_id,
               u.id AS user_id, u.username, u.full_name, u.avatar_url,
               c.likes_count
@@ -14,9 +15,11 @@ const getComments = async (req, res, next) => {
        WHERE c.post_id = $1 AND c.deleted_at IS NULL AND c.parent_id IS NULL
        ORDER BY c.created_at ASC
        LIMIT $2 OFFSET $3`,
-      [postId, limit, offset]
+      BigInt(postId),
+      limit,
+      offset
     );
-    res.json(result.rows);
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -27,24 +30,32 @@ const addComment = async (req, res, next) => {
     const { postId } = req.params;
     const { content, parent_id } = req.body;
 
-    const post = await db.query('SELECT user_id FROM posts WHERE id = $1', [postId]);
-    if (!post.rows[0]) return res.status(404).json({ error: 'Post not found' });
+    const post = await prisma.posts.findUnique({
+      where: { id: BigInt(postId) },
+      select: { user_id: true },
+    });
 
-    const result = await db.query(
-      'INSERT INTO comments (post_id, user_id, content, parent_id) VALUES ($1, $2, $3, $4) RETURNING *',
-      [postId, req.user.id, content, parent_id || null]
-    );
+    if (!post) return res.status(404).json({ error: 'Post not found' });
 
-    if (post.rows[0].user_id !== req.user.id) {
-      await emitNotification(post.rows[0].user_id, {
+    const comment = await prisma.comments.create({
+      data: {
+        post_id: BigInt(postId),
+        user_id: BigInt(req.user.id),
+        content,
+        parent_id: parent_id ? BigInt(parent_id) : null,
+      },
+    });
+
+    if (post.user_id !== BigInt(req.user.id)) {
+      await emitNotification(post.user_id, {
         type: 'comment',
         actor_id: req.user.id,
         post_id: postId,
-        comment_id: result.rows[0].id,
+        comment_id: comment.id,
       });
     }
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(comment);
   } catch (err) {
     next(err);
   }
@@ -54,14 +65,22 @@ const addComment = async (req, res, next) => {
 const editComment = async (req, res, next) => {
   try {
     const { content } = req.body;
-    const result = await db.query(
-      `UPDATE comments SET content = $1, edited_at = NOW()
-       WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
-       RETURNING id, content, edited_at`,
-      [content, req.params.id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(403).json({ error: 'Not allowed' });
-    res.json(result.rows[0]);
+    const commentId = BigInt(req.params.id);
+    const userId = BigInt(req.user.id);
+
+    const existing = await prisma.comments.findFirst({
+      where: { id: commentId, user_id: userId, deleted_at: null },
+    });
+
+    if (!existing) return res.status(403).json({ error: 'Not allowed' });
+
+    const updated = await prisma.comments.update({
+      where: { id: commentId },
+      data: { content, edited_at: new Date() },
+      select: { id: true, content: true, edited_at: true },
+    });
+
+    res.json(updated);
   } catch (err) {
     next(err);
   }
@@ -69,11 +88,21 @@ const editComment = async (req, res, next) => {
 
 const deleteComment = async (req, res, next) => {
   try {
-    const result = await db.query(
-      'UPDATE comments SET deleted_at = NOW() WHERE id = $1 AND user_id = $2 RETURNING id',
-      [req.params.id, req.user.id]
-    );
-    if (!result.rows[0]) return res.status(403).json({ error: 'Not allowed' });
+    const commentId = BigInt(req.params.id);
+    const userId = BigInt(req.user.id);
+
+    const existing = await prisma.comments.findFirst({
+      where: { id: commentId, user_id: userId, deleted_at: null },
+    });
+
+    if (!existing) return res.status(403).json({ error: 'Not allowed' });
+
+    const deleted = await prisma.comments.update({
+      where: { id: commentId },
+      data: { deleted_at: new Date() },
+      select: { id: true },
+    });
+
     res.json({ success: true });
   } catch (err) {
     next(err);

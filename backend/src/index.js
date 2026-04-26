@@ -1,21 +1,25 @@
 require('dotenv').config();
+require('./instrument'); // Initialize Sentry before anything else
 const app = require('./app');
 const http = require('http');
 const { initSocket } = require('./services/socket.service');
-const { pool } = require('./config/db');
+const prisma = require('./config/prisma');
 const redis = require('./config/redis');
 const logger = require('./utils/logger');
+
+// Initialize background queues
+require('./queues/email.queue');
 
 const PORT = process.env.PORT || 4000;
 
 const applyMigrations = async () => {
   // Idempotent migrations safe to run on every start
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE`);
-  await pool.query(
+  await prisma.$executeRawUnsafe(`ALTER TABLE users ADD COLUMN IF NOT EXISTS cover_url TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth DATE`);
+  await prisma.$executeRawUnsafe(
     `ALTER TABLE groups ADD COLUMN IF NOT EXISTS privacy VARCHAR(10) NOT NULL DEFAULT 'public'`
   );
-  await pool.query(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS group_join_requests (
       id          BIGSERIAL PRIMARY KEY,
       group_id    BIGINT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
@@ -25,10 +29,10 @@ const applyMigrations = async () => {
       UNIQUE (group_id, user_id)
     )
   `);
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS idx_group_join_requests ON group_join_requests (group_id, status)`
   );
-  await pool.query(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS group_invites (
       id          BIGSERIAL PRIMARY KEY,
       group_id    BIGINT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
@@ -39,16 +43,16 @@ const applyMigrations = async () => {
       UNIQUE (group_id, invitee_id)
     )
   `);
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `ALTER TABLE notifications ADD COLUMN IF NOT EXISTS group_id BIGINT REFERENCES groups(id) ON DELETE CASCADE`
   );
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`
   );
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN NOT NULL DEFAULT FALSE`
   );
-  await pool.query(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS content_reports (
       id               BIGSERIAL PRIMARY KEY,
       reporter_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -65,19 +69,19 @@ const applyMigrations = async () => {
       CONSTRAINT report_has_target CHECK (post_id IS NOT NULL OR comment_id IS NOT NULL OR reported_user_id IS NOT NULL)
     )
   `);
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports (status, created_at DESC)`
   );
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS idx_content_reports_post ON content_reports (post_id) WHERE post_id IS NOT NULL`
   );
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS idx_content_reports_comment ON content_reports (comment_id) WHERE comment_id IS NOT NULL`
   );
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS idx_content_reports_user ON content_reports (reported_user_id) WHERE reported_user_id IS NOT NULL`
   );
-  await pool.query(`
+  await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS moderation_decisions (
       id             BIGSERIAL PRIMARY KEY,
       report_id      BIGINT REFERENCES content_reports(id) ON DELETE SET NULL,
@@ -92,29 +96,43 @@ const applyMigrations = async () => {
       created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS idx_moderation_decisions_user ON moderation_decisions (target_user_id, created_at DESC)`
   );
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `CREATE INDEX IF NOT EXISTS idx_moderation_decisions_report ON moderation_decisions (report_id) WHERE report_id IS NOT NULL`
   );
   // Patch existing content_reports tables that predate the reported_user_id column
-  await pool.query(
+  await prisma.$executeRawUnsafe(
     `ALTER TABLE content_reports ADD COLUMN IF NOT EXISTS reported_user_id BIGINT REFERENCES users(id) ON DELETE CASCADE`
   );
 
   // Add edited_at columns for post/comment editing support
-  await pool.query(`ALTER TABLE posts ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`);
-  await pool.query(`ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`);
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE posts ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE comments ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`
+  );
+
+  // Add web push subscriptions
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      subscription JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
 
   // Promote the configured admin user if set
   const adminUsername = process.env.ADMIN_USERNAME;
   if (adminUsername) {
-    const result = await pool.query(
+    const result = await prisma.$queryRawUnsafe(
       `UPDATE users SET role = 'admin' WHERE username = $1 AND role != 'admin' RETURNING username`,
-      [adminUsername]
+      adminUsername
     );
-    if (result.rows[0]) logger.info(`Promoted '${adminUsername}' to admin`);
+    if (result.length > 0) logger.info(`Promoted '${adminUsername}' to admin`);
   }
 
   logger.info('Migrations applied');
@@ -144,10 +162,10 @@ const shutdown = async (signal) => {
 
   try {
     // Close database pool
-    await pool.end();
-    logger.info('Database pool closed');
+    await prisma.$disconnect();
+    logger.info('Database disconnected');
   } catch (err) {
-    logger.error('Error closing database pool:', err);
+    logger.error('Error disconnecting database:', err);
   }
 
   try {

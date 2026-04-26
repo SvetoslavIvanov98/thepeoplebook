@@ -1,17 +1,18 @@
-const db = require('../config/db');
+const prisma = require('../config/prisma');
 
 /**
  * Send push notifications to a user's registered devices via Expo's push API.
- * @param {number} userId - Recipient user ID
+ * @param {number|bigint} userId - Recipient user ID
  * @param {object} opts - { title, body, data }
  */
 const sendPush = async (userId, { title, body, data }) => {
   try {
-    const result = await db.query(
-      'SELECT token FROM push_tokens WHERE user_id = $1',
-      [userId]
-    );
-    const tokens = result.rows.map((r) => r.token);
+    const tokensResult = await prisma.push_tokens.findMany({
+      where: { user_id: BigInt(userId) },
+      select: { token: true },
+    });
+
+    const tokens = tokensResult.map((r) => r.token);
     if (!tokens.length) return;
 
     const messages = tokens.map((token) => ({
@@ -32,7 +33,7 @@ const sendPush = async (userId, { title, body, data }) => {
       const resp = await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: {
-          'Accept': 'application/json',
+          Accept: 'application/json',
           'Accept-Encoding': 'gzip, deflate',
           'Content-Type': 'application/json',
         },
@@ -50,10 +51,9 @@ const sendPush = async (userId, { title, body, data }) => {
           }
         });
         if (invalid.length) {
-          await db.query(
-            'DELETE FROM push_tokens WHERE token = ANY($1)',
-            [invalid]
-          );
+          await prisma.push_tokens.deleteMany({
+            where: { token: { in: invalid } },
+          });
         }
       }
     }
