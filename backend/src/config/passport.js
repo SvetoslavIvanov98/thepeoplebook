@@ -90,6 +90,10 @@ passport.use(
           });
         }
 
+        if (user.is_banned) {
+          return done(null, false, { message: 'Account suspended' });
+        }
+
         return done(null, user);
       } catch (err) {
         return done(err, null);

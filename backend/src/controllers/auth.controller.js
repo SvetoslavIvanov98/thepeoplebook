@@ -1,11 +1,15 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/prisma');
+const redis = require('../config/redis');
 const authService = require('../services/auth.service');
 
+// H-2: sameSite 'strict' prevents the refresh token cookie from being sent
+// on any cross-site request (including form-based CSRF attacks).
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
+  sameSite: 'strict',
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   path: '/',
 };
@@ -83,15 +87,62 @@ const logout = async (req, res, next) => {
   }
 };
 
+// C-2: Instead of putting the access token in the URL fragment (browser history exposure),
+// we generate a random one-time code stored in Redis for 60 seconds, redirect the browser
+// to /auth/callback?code=<code>, and let the frontend exchange it via POST /api/auth/exchange.
 const googleCallback = async (req, res) => {
   try {
-    const token = authService.signToken(req.user.id);
-    const refreshToken = authService.signRefresh(req.user.id);
-    await authService.storeRefreshToken(req.user.id, refreshToken);
-    res.cookie('refresh_token', refreshToken, COOKIE_OPTIONS);
-    res.redirect(`${process.env.FRONTEND_URL}/auth/callback#token=${token}`);
+    const code = crypto.randomBytes(32).toString('hex');
+    const userId = req.user.id.toString();
+
+    // Store the code → userId mapping for 60 seconds
+    if (redis.isReady) {
+      await redis.setEx(`oauth_code:${code}`, 60, userId);
+    } else {
+      // Fallback if Redis is unavailable: sign tokens and redirect using a very short-lived
+      // access token in a query param (not ideal but better than being completely broken).
+      const token = authService.signToken(userId);
+      const refreshToken = authService.signRefresh(userId);
+      await authService.storeRefreshToken(userId, refreshToken);
+      res.cookie('refresh_token', refreshToken, COOKIE_OPTIONS);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?token=${token}`);
+    }
+
+    res.redirect(`${process.env.FRONTEND_URL}/auth/callback?code=${code}`);
   } catch (_) {
     res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth`);
+  }
+};
+
+// POST /api/auth/exchange  { code: '<one-time code>' }
+// Exchanges the ephemeral OAuth code for real tokens. The code is consumed on first use.
+const exchangeCode = async (req, res, next) => {
+  try {
+    const { code } = req.body;
+    if (!code || typeof code !== 'string' || !/^[0-9a-f]{64}$/.test(code)) {
+      return res.status(400).json({ error: 'Invalid code' });
+    }
+
+    if (!redis.isReady) {
+      return res.status(503).json({ error: 'Auth service temporarily unavailable' });
+    }
+
+    const redisKey = `oauth_code:${code}`;
+    const userId = await redis.get(redisKey);
+    if (!userId) {
+      return res.status(401).json({ error: 'Code expired or already used' });
+    }
+
+    // Consume the code immediately (one-time use)
+    await redis.del(redisKey);
+
+    const token = authService.signToken(userId);
+    const refreshToken = authService.signRefresh(userId);
+    await authService.storeRefreshToken(userId, refreshToken);
+    res.cookie('refresh_token', refreshToken, COOKIE_OPTIONS);
+    res.json({ token });
+  } catch (err) {
+    next(err);
   }
 };
 
@@ -120,4 +171,4 @@ const me = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, refresh, logout, googleCallback, me };
+module.exports = { register, login, refresh, logout, googleCallback, exchangeCode, me };

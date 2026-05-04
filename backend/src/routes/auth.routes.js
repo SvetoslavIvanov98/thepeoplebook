@@ -7,6 +7,7 @@ const {
   refresh,
   logout,
   googleCallback,
+  exchangeCode,
   me,
 } = require('../controllers/auth.controller');
 const { authenticate } = require('../middleware/auth.middleware');
@@ -37,6 +38,13 @@ router.post(
 router.post('/refresh', refresh);
 router.post('/logout', logout);
 router.get('/me', authenticate, me);
+
+// C-2: Exchange a one-time OAuth code for real tokens
+router.post(
+  '/exchange',
+  [body('code').isString().trim().isLength({ min: 64, max: 64 }), validate],
+  exchangeCode
+);
 
 // Google OAuth
 router.get(

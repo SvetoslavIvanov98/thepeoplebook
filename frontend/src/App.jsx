@@ -52,7 +52,13 @@ const AdminRoute = ({ children }) => {
 };
 
 export default function App() {
-  const { token, fetchMe } = useAuthStore();
+  const { token, fetchMe, initializeAuth, isInitializing } = useAuthStore();
+
+  // M-1: On first load, silently refresh the token using the HttpOnly cookie.
+  // This replaces the previous localStorage-based token persistence.
+  useEffect(() => {
+    initializeAuth();
+  }, []);
 
   useEffect(() => {
     if (token) {
@@ -60,6 +66,16 @@ export default function App() {
       initSocket(token);
     }
   }, [token]);
+
+  // Block rendering until we know whether the user is authenticated.
+  // This prevents PrivateRoute from redirecting to /login on initial load.
+  if (isInitializing) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-gray-950">
+        <div className="w-10 h-10 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <>
@@ -72,13 +88,33 @@ export default function App() {
 
         {/* Guest routes */}
         <Route element={<AuthLayout />}>
-          <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
-          <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+          <Route
+            path="/login"
+            element={
+              <GuestRoute>
+                <LoginPage />
+              </GuestRoute>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <GuestRoute>
+                <RegisterPage />
+              </GuestRoute>
+            }
+          />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
         </Route>
 
         {/* Private routes */}
-        <Route element={<PrivateRoute><MainLayout /></PrivateRoute>}>
+        <Route
+          element={
+            <PrivateRoute>
+              <MainLayout />
+            </PrivateRoute>
+          }
+        >
           <Route path="/feed" element={<FeedPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/messages" element={<MessagesPage />} />
@@ -94,7 +130,13 @@ export default function App() {
         </Route>
 
         {/* Admin routes */}
-        <Route element={<AdminRoute><AdminLayout /></AdminRoute>}>
+        <Route
+          element={
+            <AdminRoute>
+              <AdminLayout />
+            </AdminRoute>
+          }
+        >
           <Route path="/admin" element={<AdminDashboardPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/admin/posts" element={<AdminPostsPage />} />

@@ -44,10 +44,15 @@ app.use(helmet());
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow requests with no origin (mobile apps, curl, etc.)
+      // Allow requests with no origin (mobile apps, curl, Capacitor, etc.)
       if (!origin) return cb(null, true);
-      const allowed = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',');
-      if (allowed.some((u) => origin.startsWith(u.trim()))) return cb(null, true);
+      const allowedSet = new Set(
+        (process.env.FRONTEND_URL || 'http://localhost:5173')
+          .split(',')
+          .map((u) => u.trim().replace(/\/$/, ''))
+      );
+      const normalizedOrigin = origin.replace(/\/$/, '');
+      if (allowedSet.has(normalizedOrigin)) return cb(null, true);
       cb(null, false);
     },
     credentials: true,

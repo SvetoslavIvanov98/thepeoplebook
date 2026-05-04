@@ -35,14 +35,20 @@ const POST_JOIN_CLAUSES = `
   LEFT JOIN posts op ON op.id = p.repost_id AND op.deleted_at IS NULL
   LEFT JOIN users ou ON ou.id = op.user_id`;
 
+/** Validates that a string is a safe PostgreSQL positional parameter placeholder like $1, $3. */
+const PARAM_REF_RE = /^\$\d+$/;
+
+/** Whitelist of safe ORDER BY expressions. */
+const ALLOWED_ORDER_BY = new Set(['p.created_at DESC', 'p.created_at ASC']);
+
 /**
  * Build a full post SELECT query with user-specific interaction fields.
  * @param {object} opts
  * @param {string} opts.where - Additional WHERE clauses (must start with AND if any)
  * @param {number|null} opts.userId - Current user ID or null
- * @param {string} opts.userParamRef - Param placeholder for user ID (e.g. '$3')
- * @param {string} [opts.orderBy] - ORDER BY clause (default: 'p.created_at DESC')
- * @param {string} [opts.limitRef] - Param placeholder for LIMIT
+ * @param {string} opts.userParamRef - Param placeholder for user ID (e.g. '$3') — must match /^\$\d+$/
+ * @param {string} [opts.orderBy] - ORDER BY clause — must be an allowed value
+ * @param {string} [opts.limitRef] - Param placeholder for LIMIT — must match /^\$\d+$/
  * @param {string} [opts.extraJoins] - Additional JOIN clauses
  * @returns {string}
  */
@@ -54,6 +60,17 @@ const buildPostQuery = ({
   limitRef = '',
   extraJoins = '',
 }) => {
+  // ── Security: validate interpolated values before injecting into raw SQL ──
+  if (!PARAM_REF_RE.test(userParamRef)) {
+    throw new Error(`Invalid userParamRef: "${userParamRef}"`);
+  }
+  if (limitRef && !PARAM_REF_RE.test(limitRef)) {
+    throw new Error(`Invalid limitRef: "${limitRef}"`);
+  }
+  if (!ALLOWED_ORDER_BY.has(orderBy)) {
+    throw new Error(`Invalid orderBy: "${orderBy}"`);
+  }
+
   const { likedExpr, repostedExpr } = interactionExprs(userId, userParamRef);
   return `SELECT ${POST_SELECT_COLUMNS},
               ${likedExpr} AS liked_by_me,
