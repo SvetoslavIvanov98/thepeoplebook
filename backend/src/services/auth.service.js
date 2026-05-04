@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/prisma');
 const AppError = require('../utils/AppError');
+const { emailQueue } = require('../queues/email.queue');
 
 const MIN_AGE_YEARS = 16;
 
@@ -108,6 +109,13 @@ const registerUser = async (userData) => {
 
   const refreshToken = signRefresh(user.id.toString());
   await storeRefreshToken(user.id.toString(), refreshToken);
+
+  // Queue welcome email — non-blocking, retried automatically by BullMQ on failure
+  await emailQueue.add(
+    'welcome',
+    { to: user.email, name: user.full_name || user.username },
+    { attempts: 3, backoff: { type: 'exponential', delay: 5000 } }
+  );
 
   return { user, token: signToken(user.id.toString()), refreshToken };
 };

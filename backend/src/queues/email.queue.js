@@ -17,13 +17,19 @@ const emailWorker = new Worker(
   'email',
   async (job) => {
     const logger = require('../utils/logger');
-    logger.info(`[Job ${job.id}] Processing email job`);
-    logger.info(`[Job ${job.id}] Sending email to: ${job.data.to}`);
+    const emailService = require('../services/email.service');
 
-    // Simulate heavy processing / email sending delay
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    logger.info(`[Job ${job.id}] Processing email job: ${job.name}`);
 
-    logger.info(`[Job ${job.id}] Email job completed successfully`);
+    switch (job.name) {
+      case 'welcome':
+        await emailService.sendWelcomeEmail(job.data);
+        break;
+      default:
+        logger.warn(`[Job ${job.id}] Unknown email job name: "${job.name}" — skipping`);
+    }
+
+    logger.info(`[Job ${job.id}] Email job completed`);
   },
   { connection }
 );

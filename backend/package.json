@@ -34,14 +34,15 @@
     "passport-google-oauth20": "^2.0.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",
+    "prisma": "^7.8.0",
     "redis": "^5.12.1",
+    "resend": "^6.12.2",
     "sharp": "^0.33.4",
     "socket.io": "^4.7.5",
     "uuid": "^10.0.0",
     "web-push": "^3.6.7",
     "winston": "^3.13.0",
-    "xss": "^1.0.15",
-    "prisma": "^7.8.0"
+    "xss": "^1.0.15"
   },
   "devDependencies": {
     "jest": "^30.3.0",
