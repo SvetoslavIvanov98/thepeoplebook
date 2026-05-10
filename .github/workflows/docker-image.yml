@@ -24,7 +24,7 @@ jobs:
         # These environment variables will be injected into docker-compose.yml
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         TAG: ${{ github.sha }}
-      run:
+      run: |
         export TAG=latest
         docker compose build
         docker compose push
