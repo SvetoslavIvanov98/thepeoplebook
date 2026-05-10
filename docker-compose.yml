@@ -27,6 +27,7 @@ services:
       - '6379'
 
   backend:
+    image: ${DOCKER_USERNAME}/thepeoplebook-backend:${TAG:-latest}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -46,6 +47,7 @@ services:
       - ./db/schema.sql:/app/db/schema.sql:ro
 
   frontend:
+    image: ${DOCKER_USERNAME}/thepeoplebook-frontend:${TAG:-latest}
     build:
       context: ./frontend
       dockerfile: Dockerfile
