@@ -26,5 +26,6 @@ jobs:
         TAG: ${{ github.sha }}
       run: |
         export TAG=latest
+        touch ./backend/.env
         docker compose build
         docker compose push
